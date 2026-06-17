@@ -1,0 +1,16 @@
+# Unity generated files — не трогать, Unity создаёт сама
+**/*.meta
+Library/
+Temp/
+Logs/
+obj/
+Build/
+Builds/
+UserSettings/
+
+# Unity scene и asset файлы — только через Unity Editor
+# Assets/Scenes/*.unity
+
+# OS
+.DS_Store
+Thumbs.db
