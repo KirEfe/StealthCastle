@@ -20,6 +20,7 @@ namespace StealthCastle.Mechanics
         [Header("Timing")]
         [SerializeField] float breathHoldDelay = 0.3f;
         [SerializeField] float selectionDuration = 5f;
+        [SerializeField] float disguiseDuration = 5f;
 
         [Header("Scanning")]
         [SerializeField] float scanRadius = 2f;
@@ -94,6 +95,9 @@ namespace StealthCastle.Mechanics
                 case DisguisePhase.Scanning:
                     UpdateScanning();
                     break;
+                case DisguisePhase.Disguised:
+                    UpdateDisguised();
+                    break;
             }
         }
 
@@ -137,7 +141,7 @@ namespace StealthCastle.Mechanics
             selectedIndex = 0;
             UpdateHighlights();
 
-            Debug.Log($"[Disguise] Выбор маскировки: {selectionDuration:0.#} сек. Enter — подтвердить, ←/→ — переключить.");
+            Debug.Log($"[Disguise] Выбор маскировки: {selectionDuration:0.#} сек. ЛКМ или Enter — подтвердить, ←/→ — переключить.");
         }
 
         void UpdateScanning()
@@ -166,9 +170,20 @@ namespace StealthCastle.Mechanics
             if (selectedIndex >= candidates.Count)
                 selectedIndex = candidates.Count - 1;
 
-            HandleSelectionInput();
+            // Приоритет наведению мыши
+            int mouseIndex = GetCandidateIndexUnderMouse();
+            if (mouseIndex != -1)
+            {
+                selectedIndex = mouseIndex;
+            }
+            else
+            {
+                HandleSelectionInput();
+            }
 
-            if (WasConfirmPressed())
+            UpdateHighlights();
+
+            if (WasConfirmPressed() || (WasMousePressedThisFrame() && selectedIndex != -1))
                 ConfirmDisguise();
         }
 
@@ -177,41 +192,30 @@ namespace StealthCastle.Mechanics
             if (WasPreviousPressed())
             {
                 selectedIndex = (selectedIndex - 1 + candidates.Count) % candidates.Count;
-                UpdateHighlights();
             }
             else if (WasNextPressed())
             {
                 selectedIndex = (selectedIndex + 1) % candidates.Count;
-                UpdateHighlights();
-            }
-
-            if (WasMousePressedThisFrame() && TrySelectFromMouse(out var mouseIndex))
-            {
-                selectedIndex = mouseIndex;
-                UpdateHighlights();
             }
         }
 
-        bool TrySelectFromMouse(out int index)
+        int GetCandidateIndexUnderMouse()
         {
-            index = -1;
-
             var camera = Camera.main;
             if (camera == null)
-                return false;
+                return -1;
 
             var screenPoint = Mouse.current.position.ReadValue();
             var worldPoint = camera.ScreenToWorldPoint(new Vector3(screenPoint.x, screenPoint.y, 0f - camera.transform.position.z));
             var hit = Physics2D.OverlapPoint(worldPoint, clickableLayers);
             if (hit == null)
-                return false;
+                return -1;
 
             var prop = hit.GetComponent<DisguisableProp>();
             if (prop == null)
-                return false;
+                return -1;
 
-            index = candidates.IndexOf(prop);
-            return index >= 0;
+            return candidates.IndexOf(prop);
         }
 
         void ConfirmDisguise()
@@ -230,7 +234,32 @@ namespace StealthCastle.Mechanics
             selectedIndex = -1;
 
             phase = DisguisePhase.Disguised;
+            phaseTimer = disguiseDuration;
             Debug.Log($"[Disguise] Замаскирован под: {selectedProp.DisplayName}. Враги не обнаружат.");
+        }
+
+        void UpdateDisguised()
+        {
+            phaseTimer -= Time.deltaTime;
+            if (phaseTimer <= 0f)
+            {
+                RemoveDisguise("Время маскировки истекло.");
+                return;
+            }
+
+            if (WasInteractPressed())
+            {
+                RemoveDisguise("Маскировка снята вручную.");
+            }
+        }
+
+        void RemoveDisguise(string reason)
+        {
+            Debug.Log($"[Disguise] {reason}");
+            disguiseVisual.ClearDisguise();
+            activeDisguiseSprite = null;
+            phase = DisguisePhase.Idle;
+            phaseTimer = 0f;
         }
 
         void RefreshCandidates()
@@ -248,15 +277,32 @@ namespace StealthCastle.Mechanics
                 if (prop.CompareTag("Enemy"))
                     continue;
 
-                var distance = Vector2.Distance(origin, prop.transform.position);
+                var collider = prop.GetComponent<Collider2D>();
+                float distance;
+                if (collider != null)
+                {
+                    var closestPoint = collider.ClosestPoint(origin);
+                    distance = Vector2.Distance(origin, closestPoint);
+                }
+                else
+                {
+                    distance = Vector2.Distance(origin, prop.transform.position);
+                }
+
                 if (distance <= scanRadius)
                     candidates.Add(prop);
             }
 
             candidates.Sort((a, b) =>
             {
-                var distA = Vector2.Distance(origin, a.transform.position);
-                var distB = Vector2.Distance(origin, b.transform.position);
+                var collA = a.GetComponent<Collider2D>();
+                var collB = b.GetComponent<Collider2D>();
+                var distA = collA != null
+                    ? Vector2.Distance(origin, collA.ClosestPoint(origin))
+                    : Vector2.Distance(origin, a.transform.position);
+                var distB = collB != null
+                    ? Vector2.Distance(origin, collB.ClosestPoint(origin))
+                    : Vector2.Distance(origin, b.transform.position);
                 return distA.CompareTo(distB);
             });
         }
@@ -314,6 +360,12 @@ namespace StealthCastle.Mechanics
         bool WasNextPressed() => nextAction != null && nextAction.WasPressedThisFrame();
 
         bool WasConfirmPressed() => confirmAction != null && confirmAction.WasPressedThisFrame();
+
+        bool WasInteractPressed()
+        {
+            if (interactAction == null) return false;
+            return interactAction.WasPressedThisFrame();
+        }
 
         bool WasMousePressedThisFrame() =>
             Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame;
