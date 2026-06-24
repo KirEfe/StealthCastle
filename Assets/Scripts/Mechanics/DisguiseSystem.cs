@@ -38,6 +38,7 @@ namespace StealthCastle.Mechanics
         InputAction confirmAction;
 
         PlayerDisguiseVisual disguiseVisual;
+        PlayerController playerController;
         DisguisePhase phase = DisguisePhase.Idle;
 
         float phaseTimer;
@@ -53,6 +54,7 @@ namespace StealthCastle.Mechanics
         void Awake()
         {
             disguiseVisual = GetComponent<PlayerDisguiseVisual>();
+            playerController = GetComponent<PlayerController>();
             BindInputActions();
         }
 
@@ -226,8 +228,18 @@ namespace StealthCastle.Mechanics
             var selectedProp = candidates[selectedIndex];
             var sourceRenderer = selectedProp.SpriteRenderer;
 
+            // 1. Меняем визуал
             disguiseVisual.ApplyDisguise(sourceRenderer);
             activeDisguiseSprite = sourceRenderer != null ? sourceRenderer.sprite : null;
+
+            // 2. АДАПТИРУЕМ ФИЗИКУ: Копируем размеры коллайдера предмета
+            var propCollider = selectedProp.GetComponent<Collider2D>();
+            var playerController = GetComponent<PlayerController>();
+            if (propCollider != null && playerController != null)
+            {
+                // Передаем размеры из bounds (мировые габариты) и offset пропса
+                playerController.AdaptColliderToDisguise(propCollider.bounds.size, propCollider.offset);
+            }
 
             ClearHighlights();
             candidates.Clear();
@@ -253,13 +265,20 @@ namespace StealthCastle.Mechanics
             }
         }
 
-        void RemoveDisguise(string reason)
+        public void RemoveDisguise(string reason)
         {
             Debug.Log($"[Disguise] {reason}");
             disguiseVisual.ClearDisguise();
             activeDisguiseSprite = null;
             phase = DisguisePhase.Idle;
             phaseTimer = 0f;
+
+            // 3. ВОЗВРАЩАЕМ ФИЗИКУ: Возвращаем вору его родной коллайдер
+            var playerController = GetComponent<PlayerController>();
+            if (playerController != null)
+            {
+                playerController.ResetColliderToNormal();
+            }
         }
 
         void RefreshCandidates()

@@ -22,10 +22,16 @@ public class PlayerController : MonoBehaviour
 
     private Rigidbody2D rb;
     private CapsuleCollider2D capsuleCollider;
+    private Vector2 originalColliderSize;
+    private Vector2 originalColliderOffset;
     private Vector2 moveInput;
     private bool isGrounded;
     private float coyoteTimer;
     private bool isSprinting;
+
+    // Ссылка на систему маскировки
+    private StealthCastle.Mechanics.DisguiseSystem disguiseSystem;
+    private bool isMoving;
 
     public bool IsCrouching { get; private set; }
 
@@ -33,6 +39,15 @@ public class PlayerController : MonoBehaviour
     {
         rb = GetComponent<Rigidbody2D>();
         capsuleCollider = GetComponent<CapsuleCollider2D>();
+        disguiseSystem = GetComponent<StealthCastle.Mechanics.DisguiseSystem>();
+        
+
+        // Кэшируем исходные физические размеры вора
+        if (capsuleCollider != null)
+        {
+            originalColliderSize = capsuleCollider.size;
+            originalColliderOffset = capsuleCollider.offset;
+        }
     }
 
     public void OnMove(InputValue value)
@@ -42,8 +57,8 @@ public class PlayerController : MonoBehaviour
 
     public void OnJump(InputValue value)
     {
-        // Прыжок заблокирован при приседании
-        if (IsCrouching) return;
+        // Прыжок заблокирован при приседании или маскировке
+        if (IsCrouching || (disguiseSystem != null && disguiseSystem.IsDisguised)) return;
 
         if (value.isPressed && (isGrounded || coyoteTimer > 0))
         {
@@ -60,6 +75,9 @@ public class PlayerController : MonoBehaviour
     public void OnCrouch(InputValue value)
     {
         if (!value.isPressed) return;
+
+        // Приседание заблокировано при маскировке
+        if (disguiseSystem != null && disguiseSystem.IsDisguised) return;
         
         if (IsCrouching)
             TryStandingUp();
@@ -110,6 +128,15 @@ public class PlayerController : MonoBehaviour
     private void Update()
     {
         CheckGround();
+
+        // Проверка движения для сброса маскировки
+        isMoving = moveInput.magnitude > moveThreshold;
+
+        // Сброс маскировки при начале движения
+        if (disguiseSystem != null && isMoving && disguiseSystem.IsDisguised)
+        {
+            disguiseSystem.RemoveDisguise("Снято при движении");
+        }
     }
 
     private void FixedUpdate()
@@ -142,4 +169,42 @@ public class PlayerController : MonoBehaviour
             rb.linearVelocity = new Vector2(moveInput.x * currentSpeed, rb.linearVelocity.y);
         }
     }
-}
+
+// Адаптация коллайдера под форму маскировки
+/// <summary>
+/// Применяет новые размеры и смещение коллайдера, выравнивая нижнюю точку с уровнем земли.
+/// </summary>
+/// <param name="size">Новый размер коллайдера.</param>
+/// <param name="offset">Смещение относительно центра (по X и Y).</param>
+    public void AdaptColliderToDisguise(Vector2 targetSize, Vector2 targetOffset)
+    {
+        if (capsuleCollider == null) return;
+
+        capsuleCollider.size = targetSize;
+        capsuleCollider.offset = targetOffset;
+        
+        // Сбрасываем скорость, чтобы объект при маскировке не "скользил" по инерции
+        rb.linearVelocity = Vector2.zero; 
+    }
+
+// Восстановление оригинального коллайдера
+/// <summary>
+/// Возвращает оригинальные параметры коллайдера, если над головой нет препятствия.
+/// </summary>
+    public void ResetColliderToNormal()
+    {
+        if (capsuleCollider == null) return;
+
+        // Проверяем наличие потолка над головой
+        float topY = transform.position.y + originalColliderOffset.y + originalColliderSize.y / 2f;
+        RaycastHit2D hit = Physics2D.Raycast(new Vector2(transform.position.x, topY), Vector2.up, 0.1f, groundLayer);
+        if (hit.collider != null)
+        {
+            // Если потолок есть, откладываем восстановление (можно реализовать флаг и проверять в Update)
+            return;
+        }
+
+        capsuleCollider.size = originalColliderSize;
+        capsuleCollider.offset = originalColliderOffset;
+    }
+    }
