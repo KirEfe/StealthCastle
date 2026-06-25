@@ -28,6 +28,8 @@ public class PlayerController : MonoBehaviour
     private bool isGrounded;
     private float coyoteTimer;
     private bool isSprinting;
+    // private Animator _animator;
+
 
     // Ссылка на систему маскировки
     private StealthCastle.Mechanics.DisguiseSystem disguiseSystem;
@@ -40,6 +42,7 @@ public class PlayerController : MonoBehaviour
         rb = GetComponent<Rigidbody2D>();
         capsuleCollider = GetComponent<CapsuleCollider2D>();
         disguiseSystem = GetComponent<StealthCastle.Mechanics.DisguiseSystem>();
+        // _animator = GetComponent<Animator>();
         
 
         // Кэшируем исходные физические размеры вора
@@ -88,6 +91,7 @@ public class PlayerController : MonoBehaviour
     private void StartCrouching()
     {
         IsCrouching = true;
+        // _animator.SetBool("IsCrouch", IsCrouching);
         UpdateColliderHeight(crouchColliderHeight);
     }
 
@@ -103,6 +107,7 @@ public class PlayerController : MonoBehaviour
         if (hit.collider == null)
         {
             IsCrouching = false;
+            // _animator.SetBool("IsCrouch", IsCrouching);
             UpdateColliderHeight(standColliderHeight);
         }
     }
