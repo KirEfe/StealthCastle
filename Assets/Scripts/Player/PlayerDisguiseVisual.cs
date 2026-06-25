@@ -1,90 +1,61 @@
 using UnityEngine;
-using StealthCastle;
 
 namespace StealthCastle.Player
 {
-    [RequireComponent(typeof(SpriteRenderer))]
+    // Убираем RequireComponent(typeof(SpriteRenderer)), так как теперь у нас два рендерера
     public class PlayerDisguiseVisual : MonoBehaviour
     {
-        // Компонент спрайта игрока
-        private SpriteRenderer spriteRenderer;
+        [Header("References")]
+        [SerializeField] private SpriteRenderer mainSpriteRenderer;   // Основной рендерер вора (на корневом объекте)
+        [SerializeField] private Animator playerAnimator;             // Аниматор вора (на корневом объекте)
+        [SerializeField] private SpriteRenderer disguiseSpriteRenderer; // Рендерер маскировки (на ДОЧЕРНЕМ объекте)
 
-        // Сохранённые оригинальные параметры спрайта
-        private Sprite originalSprite;
-        private Color originalColor;
-        private bool originalFlipX;
-        private Vector3 originalLocalPosition;
-
-        private void Awake()
+        void Awake()
         {
-            spriteRenderer = GetComponent<SpriteRenderer>();
-            CacheOriginalAppearance();
+            // Автоматический поиск компонентов на случай, если забыли привязать в инспекторе
+            if (mainSpriteRenderer == null) mainSpriteRenderer = GetComponent<SpriteRenderer>();
+            if (playerAnimator == null) playerAnimator = GetComponent<Animator>();
+            
+            // Гарантируем, что при старте игры дочерняя маскировка выключена
+            if (disguiseSpriteRenderer != null)
+            {
+                disguiseSpriteRenderer.gameObject.SetActive(false);
+            }
         }
 
-        /// <summary>
-        /// Сохраняет текущий внешний вид игрока, чтобы можно было вернуть его после маскировки.
-        /// </summary>
-        private void CacheOriginalAppearance()
-        {
-            originalSprite = spriteRenderer.sprite;
-            originalColor = spriteRenderer.color;
-            originalFlipX = spriteRenderer.flipX;
-            originalLocalPosition = transform.localPosition;
-        }
-
-        /// <summary>
-        /// Применяет спрайт маскировки и выравнивает его по нижней границе коллайдера игрока.
-        /// </summary>
-        /// <param name="source">SpriteRenderer объекта, из которого берём спрайт и параметры.</param>
         public void ApplyDisguise(SpriteRenderer source)
         {
-            if (source == null)
+            if (source == null || disguiseSpriteRenderer == null)
                 return;
 
-            // Просто копируем картинку. Физический коллайдер теперь сам встанет как надо, 
-            // а гравитация прижмет объект к полу.
-            spriteRenderer.sprite = source.sprite;
-            spriteRenderer.color = source.color;
-            spriteRenderer.flipX = source.flipX;
+            // 1. ПОЛНОСТЬЮ ОТКЛЮЧАЕМ визуал и аниматор вора, чтобы они не мешали
+            if (mainSpriteRenderer != null) mainSpriteRenderer.enabled = false;
+            if (playerAnimator != null) playerAnimator.enabled = false;
+
+            // 2. Включаем дочерний объект маскировки
+            disguiseSpriteRenderer.gameObject.SetActive(true);
+
+            // 3. Копируем в него внешность предмета
+            disguiseSpriteRenderer.sprite = source.sprite;
+            disguiseSpriteRenderer.color = source.color;
+            disguiseSpriteRenderer.flipX = source.flipX;
+
+            // 4. Сбрасываем локальную позицию дочернего объекта строго в центр (0,0,0)
+            disguiseSpriteRenderer.transform.localPosition = Vector3.zero;
         }
-        /// <summary>
-        /// Возвращает оригинальный внешний вид игрока.
-        /// </summary>
+
         public void ClearDisguise()
         {
-            spriteRenderer.sprite = originalSprite;
-            spriteRenderer.color = originalColor;
-            spriteRenderer.flipX = originalFlipX;
-            
-            // // Убеждаемся, что локальная позиция визуала всегда сброшена в ноль
-            // transform.localPosition = originalLocalPosition;
+            // 1. Выключаем и очищаем дочернюю маскировку
+            if (disguiseSpriteRenderer != null)
+            {
+                disguiseSpriteRenderer.sprite = null;
+                disguiseSpriteRenderer.gameObject.SetActive(false);
+            }
+
+            // 2. Возвращаем обратно родной визуал и аниматор вора
+            if (mainSpriteRenderer != null) mainSpriteRenderer.enabled = true;
+            if (playerAnimator != null) playerAnimator.enabled = true;
         }
-        /// <summary>
-        /// Выравнивает спрайт по нижней границе коллайдера игрока.
-        /// </summary>
-    private void AlignToCollider()
-    {
-        var capsule = GetComponent<CapsuleCollider2D>();
-        if (capsule == null) return;
-
-        // Сначала сбрасываем смещение чтобы bounds был чистым
-        spriteRenderer.transform.localPosition = originalLocalPosition;
-
-        // Нижняя точка коллайдера в мировых координатах
-        float colliderBottom = transform.position.y 
-            + capsule.offset.y 
-            - capsule.size.y / 2f;
-
-        // Нижняя граница спрайта в мировых координатах
-        float spriteBottom = spriteRenderer.bounds.min.y;
-
-        // Смещение для выравнивания
-        float deltaY = colliderBottom - spriteBottom;
-
-        // Применяем в локальных координатах
-        var localPos = spriteRenderer.transform.localPosition;
-        localPos.y += deltaY;
-        spriteRenderer.transform.localPosition = localPos;
-    }
     }
 }
