@@ -19,7 +19,7 @@ GameObject:
   - component: {fileID: 2130817496278096373}
   - component: {fileID: 7561527036699074130}
   - component: {fileID: 8760288744287677060}
-  - component: {fileID: 692492592621250638}
+  - component: {fileID: 8906920600634908419}
   m_Layer: 0
   m_Name: Player
   m_TagString: Player
@@ -42,6 +42,7 @@ Transform:
   m_Children:
   - {fileID: 5950465021404957548}
   - {fileID: 5629766957507164914}
+  - {fileID: 5471253525408666498}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &1024270580020293075
@@ -118,17 +119,17 @@ Rigidbody2D:
   m_Mass: 1
   m_LinearDamping: 0
   m_AngularDamping: 0.05
-  m_GravityScale: 3
-  m_Material: {fileID: 0}
+  m_GravityScale: 2.5
+  m_Material: {fileID: 6200000, guid: cf91e5fcf9d6d4f47a3dc73be9012155, type: 2}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
   m_ExcludeLayers:
     serializedVersion: 2
     m_Bits: 0
-  m_Interpolate: 0
+  m_Interpolate: 1
   m_SleepingMode: 1
-  m_CollisionDetection: 0
+  m_CollisionDetection: 1
   m_Constraints: 4
 --- !u!114 &6350425006583518087
 MonoBehaviour:
@@ -143,7 +144,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StealthCastle.Player.PlayerDisguiseVisual
   mainSpriteRenderer: {fileID: 1024270580020293075}
-  playerAnimator: {fileID: 692492592621250638}
+  playerAnimator: {fileID: 8906920600634908419}
   disguiseSpriteRenderer: {fileID: 6068183200903286637}
 --- !u!114 &4352857689239137700
 MonoBehaviour:
@@ -181,12 +182,13 @@ MonoBehaviour:
   walkSpeed: 4
   runSpeed: 9
   moveThreshold: 0.1
-  jumpForce: 12
+  jumpForce: 8
   coyoteTime: 0.2
-  groundCheckRadius: 1
+  groundCheckRadius: 0.2
   groundLayer:
     serializedVersion: 2
     m_Bits: 8
+  groundCheckPoint: {fileID: 5471253525408666498}
   crouchSpeed: 2
   crouchColliderHeight: 1
   standColliderHeight: 2
@@ -306,7 +308,7 @@ MonoBehaviour:
   mediumNoiseRadius: 3
   loudNoiseRadius: 6
   drawGizmos: 0
---- !u!95 &692492592621250638
+--- !u!95 &8906920600634908419
 Animator:
   serializedVersion: 7
   m_ObjectHideFlags: 0
@@ -419,6 +421,37 @@ SpriteRenderer:
   m_SpriteTileMode: 0
   m_WasSpriteAssigned: 1
   m_SpriteSortPoint: 0
+--- !u!1 &6645353870654729700
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5471253525408666498}
+  m_Layer: 0
+  m_Name: GroundCheckPoint
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &5471253525408666498
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6645353870654729700}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 8727091588949245998}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &8818081200179267697
 GameObject:
   m_ObjectHideFlags: 0

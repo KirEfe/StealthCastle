@@ -14,6 +14,7 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private float coyoteTime = 0.2f;
     [SerializeField] private float groundCheckRadius = 0.2f;
     [SerializeField] private LayerMask groundLayer;
+    [SerializeField] private Transform groundCheckPoint;
 
     [Header("Crouch Settings")]
     [SerializeField] private float crouchSpeed = 1.5f;
@@ -29,13 +30,24 @@ public class PlayerController : MonoBehaviour
     private float coyoteTimer;
     private bool isSprinting;
     private Animator _animator;
-
+    private SpriteRenderer spriteRenderer;
 
     // Ссылка на систему маскировки
     private StealthCastle.Mechanics.DisguiseSystem disguiseSystem;
     private bool isMoving;
 
     public bool IsCrouching { get; private set; }
+    public Vector2 MoveInput => moveInput;
+    private bool inputEnabled = true;
+    public void SetInputEnabled(bool enabled)
+    {
+        inputEnabled = enabled;
+        if (!enabled)
+        {
+            moveInput = Vector2.zero;
+            isSprinting = false;
+        }
+    }
 
     private void Awake()
     {
@@ -43,7 +55,8 @@ public class PlayerController : MonoBehaviour
         capsuleCollider = GetComponent<CapsuleCollider2D>();
         disguiseSystem = GetComponent<StealthCastle.Mechanics.DisguiseSystem>();
         _animator = GetComponent<Animator>();
-        
+        spriteRenderer = GetComponent<SpriteRenderer>();
+        SyncGroundCheckPosition();
 
         // Кэшируем исходные физические размеры вора
         if (capsuleCollider != null)
@@ -55,11 +68,13 @@ public class PlayerController : MonoBehaviour
 
     public void OnMove(InputValue value)
     {
+        if (!inputEnabled) return;
         moveInput = value.Get<Vector2>();
     }
 
     public void OnJump(InputValue value)
     {
+        // if (!inputEnabled) return;
         // Прыжок заблокирован при приседании или маскировке
         if (IsCrouching || (disguiseSystem != null && disguiseSystem.IsDisguised)) return;
 
@@ -72,16 +87,18 @@ public class PlayerController : MonoBehaviour
 
     public void OnSprint(InputValue value)
     {
+        if (!inputEnabled) return;
         isSprinting = value.isPressed;
     }
 
     public void OnCrouch(InputValue value)
     {
+        if (!inputEnabled) return;
         if (!value.isPressed) return;
 
         // Приседание заблокировано при маскировке
         if (disguiseSystem != null && disguiseSystem.IsDisguised) return;
-        
+
         if (IsCrouching)
             TryStandingUp();
         else
@@ -99,11 +116,11 @@ public class PlayerController : MonoBehaviour
     {
         // Вычисляем верхнюю точку текущего коллайдера
         Vector2 topPoint = (Vector2)transform.position + Vector2.up * (capsuleCollider.size.y / 2 + capsuleCollider.offset.y);
-        
+
         // Проверяем наличие места над головой (разница между высотой в полный рост и в приседании)
         float checkDistance = standColliderHeight - crouchColliderHeight;
         RaycastHit2D hit = Physics2D.Raycast(topPoint, Vector2.up, checkDistance, groundLayer);
-        
+
         if (hit.collider == null)
         {
             IsCrouching = false;
@@ -117,7 +134,7 @@ public class PlayerController : MonoBehaviour
         if (capsuleCollider != null)
         {
             capsuleCollider.size = new Vector2(capsuleCollider.size.x, height);
-            
+
             // Корректируем offset, чтобы низ коллайдера оставался на месте
             if (height == crouchColliderHeight)
             {
@@ -128,6 +145,7 @@ public class PlayerController : MonoBehaviour
                 capsuleCollider.offset = new Vector2(capsuleCollider.offset.x, 0);
             }
         }
+        SyncGroundCheckPosition();
     }
 
     private void Update()
@@ -151,7 +169,7 @@ public class PlayerController : MonoBehaviour
 
     private void CheckGround()
     {
-        isGrounded = Physics2D.OverlapCircle(transform.position + Vector3.down * 0.1f, groundCheckRadius, groundLayer);
+        isGrounded = Physics2D.OverlapCircle(groundCheckPoint.position, groundCheckRadius, groundLayer);
 
         if (isGrounded)
         {
@@ -167,35 +185,42 @@ public class PlayerController : MonoBehaviour
     {
         // Если приседаем, используем скорость приседания, игнорируя спринт
         float currentSpeed = IsCrouching ? crouchSpeed : ((isSprinting && isGrounded) ? runSpeed : walkSpeed);
-        
+
         // Обновляем скорость, если есть ввод или если мы на земле
         if (Mathf.Abs(moveInput.x) > moveThreshold || isGrounded)
         {
             rb.linearVelocity = new Vector2(moveInput.x * currentSpeed, rb.linearVelocity.y);
         }
+
+        // Разворот спрайта в сторону движения (не разворачиваем, если маскировка активна)
+        if (spriteRenderer != null && moveInput.x != 0 && (disguiseSystem == null || !disguiseSystem.IsDisguised))
+        {
+            spriteRenderer.flipX = moveInput.x < 0;
+        }
     }
 
-// Адаптация коллайдера под форму маскировки
-/// <summary>
-/// Применяет новые размеры и смещение коллайдера, выравнивая нижнюю точку с уровнем земли.
-/// </summary>
-/// <param name="size">Новый размер коллайдера.</param>
-/// <param name="offset">Смещение относительно центра (по X и Y).</param>
+    // Адаптация коллайдера под форму маскировки
+    /// <summary>
+    /// Применяет новые размеры и смещение коллайдера, выравнивая нижнюю точку с уровнем земли.
+    /// </summary>
+    /// <param name="size">Новый размер коллайдера.</param>
+    /// <param name="offset">Смещение относительно центра (по X и Y).</param>
     public void AdaptColliderToDisguise(Vector2 targetSize, Vector2 targetOffset)
     {
         if (capsuleCollider == null) return;
 
         capsuleCollider.size = targetSize;
         capsuleCollider.offset = targetOffset;
-        
+
         // Сбрасываем скорость, чтобы объект при маскировке не "скользил" по инерции
-        rb.linearVelocity = Vector2.zero; 
+        rb.linearVelocity = Vector2.zero;
+        SyncGroundCheckPosition();
     }
 
-// Восстановление оригинального коллайдера
-/// <summary>
-/// Возвращает оригинальные параметры коллайдера, если над головой нет препятствия.
-/// </summary>
+    // Восстановление оригинального коллайдера
+    /// <summary>
+    /// Возвращает оригинальные параметры коллайдера, если над головой нет препятствия.
+    /// </summary>
     public void ResetColliderToNormal()
     {
         if (capsuleCollider == null) return;
@@ -211,5 +236,21 @@ public class PlayerController : MonoBehaviour
 
         capsuleCollider.size = originalColliderSize;
         capsuleCollider.offset = originalColliderOffset;
+        SyncGroundCheckPosition();
     }
+
+    /// <summary>
+    /// Автоматически смещает дочерний GameObject проверки земли строго на нижнюю грань текущего коллайдера.
+    /// </summary>
+    private void SyncGroundCheckPosition()
+    {
+        if (groundCheckPoint != null && capsuleCollider != null)
+        {
+            // Вычисляем локальный Y для низа капсулы: offset.y минус половина высоты
+            float colliderBottomLocalY = capsuleCollider.offset.y - (capsuleCollider.size.y / 2f);
+            
+            // Корректируем локальную позицию дочернего объекта
+            groundCheckPoint.localPosition = new Vector3(capsuleCollider.offset.x, colliderBottomLocalY, 0f);
+        }
     }
+}

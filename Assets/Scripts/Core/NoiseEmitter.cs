@@ -1,4 +1,5 @@
 using UnityEngine;
+using System;
 using System.Collections.Generic;
 
 namespace StealthCastle.Core
@@ -28,6 +29,8 @@ namespace StealthCastle.Core
         [Header("Отладка")]
         [SerializeField] private bool drawGizmos = true;
 
+        public static event Action<Vector2, float> OnNoiseEmitted;
+
         /// <summary>
         /// Издаёт шум указанного уровня. Враги с EnemyHearing услышат его.
         /// </summary>
@@ -35,6 +38,7 @@ namespace StealthCastle.Core
         public void Emit(NoiseLevel level)
         {
             float radius = GetRadius(level);
+            OnNoiseEmitted?.Invoke(transform.position, radius);
             
             if (radius <= 0f) return;
 
