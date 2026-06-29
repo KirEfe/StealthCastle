@@ -31,6 +31,7 @@ public class PlayerController : MonoBehaviour
     private bool isSprinting;
     private Animator _animator;
     private SpriteRenderer spriteRenderer;
+    private bool isFacingRight = true;
 
     // Ссылка на систему маскировки
     private StealthCastle.Mechanics.DisguiseSystem disguiseSystem;
@@ -192,10 +193,24 @@ public class PlayerController : MonoBehaviour
             rb.linearVelocity = new Vector2(moveInput.x * currentSpeed, rb.linearVelocity.y);
         }
 
-        // Разворот спрайта в сторону движения (не разворачиваем, если маскировка активна)
-        if (spriteRenderer != null && moveInput.x != 0 && (disguiseSystem == null || !disguiseSystem.IsDisguised))
+        if (moveInput.x != 0 && (disguiseSystem == null || !disguiseSystem.IsDisguised))
         {
-            spriteRenderer.flipX = moveInput.x < 0;
+            if (moveInput.x > 0 && !isFacingRight)
+            {
+                isFacingRight = true;
+                transform.localScale = new Vector3(
+                    Mathf.Abs(transform.localScale.x),
+                    transform.localScale.y,
+                    transform.localScale.z);
+            }
+            else if (moveInput.x < 0 && isFacingRight)
+            {
+                isFacingRight = false;
+                transform.localScale = new Vector3(
+                    -Mathf.Abs(transform.localScale.x),
+                    transform.localScale.y,
+                    transform.localScale.z);
+            }
         }
     }
 
