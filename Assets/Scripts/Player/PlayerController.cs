@@ -1,8 +1,9 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using StealthCastle.Player;
 
 [RequireComponent(typeof(Rigidbody2D))]
-public class PlayerController : MonoBehaviour
+public class PlayerController : MonoBehaviour, IPlayerLedgeContext
 {
     [Header("Movement Settings")]
     [SerializeField] private float walkSpeed = 5f;
@@ -37,9 +38,33 @@ public class PlayerController : MonoBehaviour
     private StealthCastle.Mechanics.DisguiseSystem disguiseSystem;
     private bool isMoving;
 
-    public bool IsCrouching { get; private set; }
+    // Система залезания на препятствия
+    private LedgeClimbSystem ledgeClimbSystem;
+
+    // Backing field для IsCrouching (избегаем рекурсии)
+    private bool _isCrouching;
+    public bool IsCrouching => _isCrouching;
+
     public Vector2 MoveInput => moveInput;
+
+    // IPlayerLedgeContext implementation
+    public bool IsGrounded => isGrounded;
+    public bool IsDisguised
+    {
+        get
+        {
+            var ds = GetComponent<StealthCastle.Mechanics.DisguiseSystem>();
+            return ds != null && ds.IsDisguised;
+        }
+    }
+    public LayerMask ObstacleLayer => groundLayer;
+    public Rigidbody2D Rigidbody => rb;
+    public CapsuleCollider2D Collider => capsuleCollider;
+    public Animator Animator => _animator;
+    public float ColliderHeight => capsuleCollider != null ? capsuleCollider.size.y : 1f;
+
     private bool inputEnabled = true;
+
     public void SetInputEnabled(bool enabled)
     {
         inputEnabled = enabled;
@@ -47,6 +72,24 @@ public class PlayerController : MonoBehaviour
         {
             moveInput = Vector2.zero;
             isSprinting = false;
+
+            // Сброс залезания при отключении ввода
+            if (ledgeClimbSystem != null)
+            {
+                ledgeClimbSystem.ForceRelease();
+                ledgeClimbSystem.SetInputEnabled(false);
+            }
+
+            // СТРАХОВКА: Если мы принудительно выключаем ввод (транзит между этажами), 
+            // мгновенно сбрасываем маскировку, чтобы не протащить её сквозь телепорт
+            if (disguiseSystem != null && disguiseSystem.IsDisguised)
+            {
+                disguiseSystem.RemoveDisguise("Снято при переезде между этажами");
+            }
+        }
+        else
+        {
+            ledgeClimbSystem?.SetInputEnabled(true);
         }
     }
 
@@ -58,6 +101,13 @@ public class PlayerController : MonoBehaviour
         _animator = GetComponent<Animator>();
         spriteRenderer = GetComponent<SpriteRenderer>();
         SyncGroundCheckPosition();
+
+        // Инициализация системы залезания
+        ledgeClimbSystem = GetComponent<LedgeClimbSystem>();
+        if (ledgeClimbSystem != null)
+        {
+            ledgeClimbSystem.Initialize(this);
+        }
 
         // Кэшируем исходные физические размеры вора
         if (capsuleCollider != null)
@@ -75,14 +125,24 @@ public class PlayerController : MonoBehaviour
 
     public void OnJump(InputValue value)
     {
-        // if (!inputEnabled) return;
+        if (!inputEnabled) return;
+
+        // Если мы в состоянии залезания — делегируем в LedgeClimbSystem
+        if (ledgeClimbSystem != null 
+            && (ledgeClimbSystem.CurrentState == LedgeClimbSystem.LedgeState.WallRunning
+                || ledgeClimbSystem.CurrentState == LedgeClimbSystem.LedgeState.Grabbing))
+        {
+            ledgeClimbSystem.OnJumpPressed();
+            return;
+        }
+
         // Прыжок заблокирован при приседании или маскировке
-        if (IsCrouching || (disguiseSystem != null && disguiseSystem.IsDisguised)) return;
+        if (_isCrouching || (disguiseSystem != null && disguiseSystem.IsDisguised)) return;
 
         if (value.isPressed && (isGrounded || coyoteTimer > 0))
         {
             rb.AddForce(Vector2.up * jumpForce, ForceMode2D.Impulse);
-            coyoteTimer = 0; // Reset coyote timer after jumping
+            coyoteTimer = 0;
         }
     }
 
@@ -100,16 +160,33 @@ public class PlayerController : MonoBehaviour
         // Приседание заблокировано при маскировке
         if (disguiseSystem != null && disguiseSystem.IsDisguised) return;
 
-        if (IsCrouching)
+        if (_isCrouching)
             TryStandingUp();
         else
             StartCrouching();
     }
 
+    /// <summary>
+    /// Ввод «вниз» (S / DownArrow) — отпускание края при залезании.
+    /// Срабатывает ТОЛЬКО если LedgeState != None, иначе return (не перехватываем ввод для FloorTransition).
+    /// </summary>
+    public void OnDropDown(InputValue value)
+    {
+        if (!inputEnabled) return;
+        if (!value.isPressed) return;
+
+        if (ledgeClimbSystem != null && ledgeClimbSystem.CurrentState != LedgeClimbSystem.LedgeState.None)
+        {
+            ledgeClimbSystem.OnDropDownPressed();
+            return;
+        }
+        // Иначе — не обрабатываем, оставляем для FloorTransition
+    }
+
     private void StartCrouching()
     {
-        IsCrouching = true;
-        _animator.SetBool("IsCrouch", IsCrouching);
+        _isCrouching = true;
+        _animator.SetBool("IsCrouch", _isCrouching);
         UpdateColliderHeight(crouchColliderHeight);
     }
 
@@ -124,8 +201,8 @@ public class PlayerController : MonoBehaviour
 
         if (hit.collider == null)
         {
-            IsCrouching = false;
-            _animator.SetBool("IsCrouch", IsCrouching);
+            _isCrouching = false;
+            _animator.SetBool("IsCrouch", _isCrouching);
             UpdateColliderHeight(standColliderHeight);
         }
     }
@@ -165,6 +242,22 @@ public class PlayerController : MonoBehaviour
 
     private void FixedUpdate()
     {
+        // Проверка залезания на препятствия (только если не в процессе залезания)
+        if (ledgeClimbSystem != null 
+            && ledgeClimbSystem.CurrentState == LedgeClimbSystem.LedgeState.None
+            && moveInput.x != 0
+            && !isGrounded
+            && rb.linearVelocity.y <= 0f)
+        {
+            ledgeClimbSystem.TryGrabLedge();
+        }
+
+        // Если залезание активно — пропускаем обычное движение
+        if (ledgeClimbSystem != null && ledgeClimbSystem.CurrentState != LedgeClimbSystem.LedgeState.None)
+        {
+            return;
+        }
+
         ApplyMovement();
     }
 
@@ -185,7 +278,7 @@ public class PlayerController : MonoBehaviour
     private void ApplyMovement()
     {
         // Если приседаем, используем скорость приседания, игнорируя спринт
-        float currentSpeed = IsCrouching ? crouchSpeed : ((isSprinting && isGrounded) ? runSpeed : walkSpeed);
+        float currentSpeed = _isCrouching ? crouchSpeed : ((isSprinting && isGrounded) ? runSpeed : walkSpeed);
 
         // Обновляем скорость, если есть ввод или если мы на земле
         if (Mathf.Abs(moveInput.x) > moveThreshold || isGrounded)
@@ -263,7 +356,7 @@ public class PlayerController : MonoBehaviour
         {
             // Вычисляем локальный Y для низа капсулы: offset.y минус половина высоты
             float colliderBottomLocalY = capsuleCollider.offset.y - (capsuleCollider.size.y / 2f);
-            
+
             // Корректируем локальную позицию дочернего объекта
             groundCheckPoint.localPosition = new Vector3(capsuleCollider.offset.x, colliderBottomLocalY, 0f);
         }
