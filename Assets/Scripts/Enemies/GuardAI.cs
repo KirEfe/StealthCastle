@@ -1,10 +1,10 @@
-using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using StealthCastle.Core;
 using StealthCastle.Mechanics;
 
+[RequireComponent(typeof(Rigidbody2D))]
 public class GuardAI : MonoBehaviour
 {
     [Header("Патруль")]
@@ -22,8 +22,14 @@ public class GuardAI : MonoBehaviour
     [SerializeField] SpriteRenderer guardSprite;
     [SerializeField] LayerMask obstacleLayer;
 
-    // Флаг перехода между этажами — устанавливает EnemyFloorTransition
+    // Флаг перехода между этажами
     public bool IsTraversing { get; set; }
+    // Свойство, чтобы другие скрипты знали, что мы в состоянии погони
+    public bool IsChasing => currentState == GuardState.Chase;
+
+    // Переменные для бега к двери
+    private bool isChasingDoor = false;
+    private Vector2 doorTargetPosition;
 
     enum GuardState { Patrol, Investigate, Chase, Search }
     GuardState currentState = GuardState.Patrol;
@@ -37,10 +43,16 @@ public class GuardAI : MonoBehaviour
     float searchTimer;
     float flipTimer;
     Vector2 lastMoveDirection;
+    
+    private Rigidbody2D rb;
+
+    void Awake()
+    {
+        rb = GetComponent<Rigidbody2D>();
+    }
 
     void Start()
     {
-        // Находим игрока по тегу
         GameObject playerGO = GameObject.FindGameObjectWithTag("Player");
         if (playerGO != null)
         {
@@ -48,7 +60,6 @@ public class GuardAI : MonoBehaviour
             playerDisguise = playerGO.GetComponent<DisguiseSystem>();
         }
 
-        // Подписываемся на событие шума
         NoiseEmitter.OnNoiseEmitted += HandleNoise;
 
         if (patrolPoints != null && patrolPoints.Count > 0)
@@ -59,21 +70,34 @@ public class GuardAI : MonoBehaviour
 
     void OnDestroy()
     {
-        // Отписываемся при уничтожении объекта
         NoiseEmitter.OnNoiseEmitted -= HandleNoise;
+    }
+
+
+    public void SetChaseTargetDoor(Vector2 doorPos)
+    {
+        isChasingDoor = true;
+        doorTargetPosition = doorPos;
+    }
+
+    public void ResetChaseTarget()
+    {
+        isChasingDoor = false;
+    }
+
+    public void LosePlayer()
+    {
+        lastKnownPosition = transform.position;
+        ChangeState(GuardState.Search);
     }
 
     void Update()
     {
-        // Стражник заморожен во время перехода между этажами
-        if (IsTraversing) return;
-
-        switch (currentState)
+        // Если переходим между этажами — останавливаемся и отключаем логику
+        if (IsTraversing)
         {
-            case GuardState.Patrol:     UpdatePatrol();     break;
-            case GuardState.Investigate: UpdateInvestigate(); break;
-            case GuardState.Chase:      UpdateChase();      break;
-            case GuardState.Search:     UpdateSearch();     break;
+            rb.linearVelocity = new Vector2(0, rb.linearVelocity.y);
+            return;
         }
 
         // Обнаружение игрока — только вне погони
@@ -85,20 +109,40 @@ public class GuardAI : MonoBehaviour
         ControlSpriteFlip();
     }
 
+    void FixedUpdate()
+    {
+        if (IsTraversing) return;
+
+        switch (currentState)
+        {
+            case GuardState.Patrol:     UpdatePatrol();     break;
+            case GuardState.Investigate: UpdateInvestigate(); break;
+            case GuardState.Chase:      UpdateChase();      break;
+            case GuardState.Search:     UpdateSearch();     break;
+        }
+    }
+
     void UpdatePatrol()
     {
-        if (patrolPoints == null || patrolPoints.Count == 0 || isWaiting) return;
+        if (patrolPoints == null || patrolPoints.Count == 0 || isWaiting) 
+        {
+            rb.linearVelocity = new Vector2(0, rb.linearVelocity.y);
+            return;
+        }
 
         Vector2 target = patrolPoints[currentPatrolIndex].position;
-        lastMoveDirection = (target - (Vector2)transform.position).normalized;
+        float distToTarget = Mathf.Abs(target.x - transform.position.x);
 
-        transform.position = Vector2.MoveTowards(
-            transform.position, target, walkSpeed * Time.deltaTime);
-
-        if (Vector2.Distance(transform.position, target) < 0.1f && !isWaiting)
+        if (distToTarget < 0.1f && !isWaiting)
         {
+            rb.linearVelocity = new Vector2(0, rb.linearVelocity.y);
             StartCoroutine(WaitAtPoint());
+            return;
         }
+
+        float dirX = Mathf.Sign(target.x - transform.position.x);
+        lastMoveDirection = new Vector2(dirX, 0);
+        rb.linearVelocity = new Vector2(dirX * walkSpeed, rb.linearVelocity.y);
     }
 
     IEnumerator WaitAtPoint()
@@ -111,43 +155,66 @@ public class GuardAI : MonoBehaviour
 
     void UpdateInvestigate()
     {
-        lastMoveDirection = (lastKnownPosition - (Vector2)transform.position).normalized;
+        float distToTarget = Mathf.Abs(lastKnownPosition.x - transform.position.x);
 
-        transform.position = Vector2.MoveTowards(
-            transform.position, lastKnownPosition, walkSpeed * Time.deltaTime);
-
-        if (Vector2.Distance(transform.position, lastKnownPosition) < 0.2f)
+        if (distToTarget < 0.2f)
         {
+            rb.linearVelocity = new Vector2(0, rb.linearVelocity.y);
             ChangeState(GuardState.Search);
+            return;
         }
+
+        float dirX = Mathf.Sign(lastKnownPosition.x - transform.position.x);
+        lastMoveDirection = new Vector2(dirX, 0);
+        rb.linearVelocity = new Vector2(dirX * walkSpeed, rb.linearVelocity.y);
     }
 
     void UpdateChase()
     {
         if (playerTransform == null) return;
 
-        // Если игрок замаскировался и мы не видим его напрямую — переходим к поиску
-        if (playerDisguise != null && playerDisguise.IsDisguised && !CanSeePlayer())
+        // Если гонимся за дверью, цель — дверь. Если нет — сам игрок.
+        Vector2 targetPos = isChasingDoor ? doorTargetPosition : (Vector2)playerTransform.position;
+
+        // Если мы не бежим к двери, а игрок оказался на другом этаже (разница по высоте > 2.5) — мы его потеряли!
+        if (!isChasingDoor && Mathf.Abs(playerTransform.position.y - transform.position.y) > 2.5f)
+        {
+            LosePlayer();
+            return;
+        }
+
+        // Потеря из вида при маскировке
+        if (!isChasingDoor && playerDisguise != null && playerDisguise.IsDisguised && !CanSeePlayer())
         {
             lastKnownPosition = playerTransform.position;
             ChangeState(GuardState.Search);
             return;
         }
 
-        lastMoveDirection = ((Vector2)playerTransform.position - (Vector2)transform.position).normalized;
+        float distToTarget = Mathf.Abs(targetPos.x - transform.position.x);
 
-        transform.position = Vector2.MoveTowards(
-            transform.position, playerTransform.position, chaseSpeed * Time.deltaTime);
+        // Если добежали до двери, но нас еще не телепортировали — ждем на месте
+        if (isChasingDoor && distToTarget < 0.1f)
+        {
+            rb.linearVelocity = new Vector2(0, rb.linearVelocity.y);
+            return;
+        }
 
-        lastKnownPosition = playerTransform.position;
+        float dirX = Mathf.Sign(targetPos.x - transform.position.x);
+        lastMoveDirection = new Vector2(dirX, 0);
+        rb.linearVelocity = new Vector2(dirX * chaseSpeed, rb.linearVelocity.y);
+        
+        lastKnownPosition = targetPos;
     }
 
     void UpdateSearch()
     {
-        searchTimer -= Time.deltaTime;
-        flipTimer -= Time.deltaTime;
+        // При поиске стоим на месте
+        rb.linearVelocity = new Vector2(0, rb.linearVelocity.y);
+        
+        searchTimer -= Time.fixedDeltaTime;
+        flipTimer -= Time.fixedDeltaTime;
 
-        // Крутим головой по сторонам каждые 1.2 сек
         if (flipTimer <= 0f && guardSprite != null)
         {
             guardSprite.flipX = !guardSprite.flipX;
@@ -166,18 +233,15 @@ public class GuardAI : MonoBehaviour
 
         float dist = Vector2.Distance(transform.position, playerTransform.position);
 
-        // Зона близости — шестое чувство, работает даже при маскировке
         if (dist <= proximityRange)
         {
             TriggerAlert();
             return;
         }
 
-        // Конус зрения — не работает при маскировке
         if (dist > visionRange) return;
         if (playerDisguise != null && playerDisguise.IsDisguised) return;
 
-        // Проверяем направление взгляда стражника
         float lookDir = (guardSprite != null && guardSprite.flipX) ? -1f : 1f;
         float dirToPlayer = playerTransform.position.x > transform.position.x ? 1f : -1f;
 
@@ -196,20 +260,18 @@ public class GuardAI : MonoBehaviour
         Vector2 dir = (playerTransform.position - transform.position).normalized;
         float dist = Vector2.Distance(transform.position, playerTransform.position);
 
-        // Raycast проверяет нет ли препятствия между стражником и игроком
         RaycastHit2D hit = Physics2D.Raycast(transform.position, dir, dist, obstacleLayer);
-
         return hit.collider == null;
     }
 
     void HandleNoise(Vector2 noisePosition, float intensity)
     {
-        // Игнорируем шум во время погони или перехода
         if (currentState == GuardState.Chase || IsTraversing) return;
 
         if (Vector2.Distance(transform.position, noisePosition) <= intensity)
         {
             lastKnownPosition = noisePosition;
+            isWaiting = false; // Сбрасываем ожидание, если услышал шум во время стоянки
             ChangeState(GuardState.Investigate);
         }
     }
@@ -218,6 +280,7 @@ public class GuardAI : MonoBehaviour
     {
         if (currentState != GuardState.Chase)
         {
+            isWaiting = false;
             ChangeState(GuardState.Chase);
         }
     }
@@ -237,9 +300,9 @@ public class GuardAI : MonoBehaviour
         if (guardSprite == null || IsTraversing) return;
 
         if (lastMoveDirection.x > 0.01f)
-            guardSprite.flipX = false; // смотрит вправо
+            guardSprite.flipX = false;
         else if (lastMoveDirection.x < -0.01f)
-            guardSprite.flipX = true;  // смотрит влево
+            guardSprite.flipX = true; 
     }
 
     void OnDrawGizmosSelected()
@@ -249,5 +312,11 @@ public class GuardAI : MonoBehaviour
 
         Gizmos.color = Color.red;
         Gizmos.DrawWireSphere(transform.position, proximityRange);
+
+        // Линия направления взгляда
+        float lookDir = (guardSprite != null && guardSprite.flipX) ? -1f : 1f;
+        Gizmos.color = Color.cyan;
+        Vector3 sightEnd = transform.position + (Vector3.right * lookDir * visionRange);
+        Gizmos.DrawLine(transform.position, sightEnd);
     }
 }

@@ -18,29 +18,35 @@ public class FloorTransition : MonoBehaviour
     [SerializeField] private float fadeInDuration = 0.3f;
     [SerializeField] private GameObject fadePrefab;
 
+    [Header("Enemy Tracking (Хлебные крошки)")]
+    [SerializeField] private float enemyTransitionDelay = 1f; // Задержка стражника на лестнице
+    [SerializeField] private float breadcrumbDuration = 4f;   // Сколько секунд стражник может "взять след"
+
     private const float verticalThreshold = 0.5f;
 
     private GameObject playerObject;
     private PlayerController playerController;
-    private bool isTransitioning = false;
+    
+    private bool isPlayerTransitioning = false;
+    
+    // Память для стражников
+    private Transform lastPlayerExit;
+    private float breadcrumbTimer = 0f;
 
-    // СТАТИЧЕСКИЕ ПЕРЕМЕННЫЕ: будут общими для ВСЕХ переходов на сцене
+    // СТАТИЧЕСКИЕ ПЕРЕМЕННЫЕ
     private static GameObject sharedFadeGO;
     private static Image sharedFadeImage;
 
     private void Awake()
     {
-        BoxCollider2D col = GetComponent<BoxCollider2D>();
-        col.isTrigger = true;
+        GetComponent<BoxCollider2D>().isTrigger = true;
     }
 
     private void Start()
     {
-        // Инициализируем префаб ТОЛЬКО ОДИН РАЗ, даже если лестниц на сцене сотня
         if (fadePrefab != null && sharedFadeGO == null)
         {
             sharedFadeGO = Instantiate(fadePrefab);
-            // Ищем Image в том числе на дочерних объектах префаба Canvas
             sharedFadeImage = sharedFadeGO.GetComponentInChildren<Image>();
             
             if (sharedFadeImage != null)
@@ -48,20 +54,37 @@ public class FloorTransition : MonoBehaviour
                 sharedFadeImage.color = new Color(0f, 0f, 0f, 0f);
             }
             sharedFadeGO.SetActive(false);
-            
-            // Защищаем от удаления при переходе между комнатами/сценами
             DontDestroyOnLoad(sharedFadeGO); 
         }
     }
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        if (isTransitioning) return;
-
-        if (other.CompareTag("Player"))
+        // 1. Обработка ИГРОКА
+        if (other.CompareTag("Player") && !isPlayerTransitioning)
         {
             playerObject = other.gameObject;
             playerController = other.GetComponent<PlayerController>();
+        }
+        
+        // 2. Обработка СТРАЖНИКОВ
+        else if (other.CompareTag("Enemy"))
+        {
+            GuardAI guard = other.GetComponent<GuardAI>();
+            
+            if (guard != null && !guard.IsTraversing && guard.IsChasing)
+            {
+                if (lastPlayerExit != null)
+                {
+                    StartCoroutine(EnemyTransitionSequence(other.gameObject, guard, lastPlayerExit));
+                }
+                else
+                {
+                    // След простыл! Игрок ушел слишком давно
+                    guard.ResetChaseTarget();
+                    guard.LosePlayer();
+                }
+            }
         }
     }
 
@@ -69,10 +92,7 @@ public class FloorTransition : MonoBehaviour
     {
         if (other.CompareTag("Player"))
         {
-            // ИСПРАВЛЕНИЕ: Если прямо сейчас идет процесс телепортации, 
-            // мы ИГНОРИРУЕМ выход из триггера, так как он вызван самим перемещением!
-            if (isTransitioning) return;
-
+            if (isPlayerTransitioning) return;
             playerObject = null;
             playerController = null;
         }
@@ -80,68 +100,111 @@ public class FloorTransition : MonoBehaviour
 
     private void Update()
     {
-        // Проверяем наличие компонентов
-        if (isTransitioning || playerObject == null || playerController == null) return;
+        // Таймер исчезновения "следа" игрока
+        if (breadcrumbTimer > 0f)
+        {
+            breadcrumbTimer -= Time.deltaTime;
+            if (breadcrumbTimer <= 0f)
+            {
+                lastPlayerExit = null; // След простыл
+            }
+        }
 
-        // Безопасная проверка ввода (с учетом возможных изменений в PlayerController)
+        if (isPlayerTransitioning || playerObject == null || playerController == null) return;
+
         Vector2 input = playerController.MoveInput;
 
         if (input.y > verticalThreshold && hasUpExit && upExit != null)
         {
-            StartTransition(upExit);
+            StartPlayerTransition(upExit);
         }
         else if (input.y < -verticalThreshold && hasDownExit && downExit != null)
         {
-            StartTransition(downExit);
+            StartPlayerTransition(downExit);
         }
     }
 
-    private void StartTransition(Transform exit)
+    private void StartPlayerTransition(Transform exit)
     {
+        // ОСТАВЛЯЕМ СЛЕД: Запоминаем, куда ушел игрок, и обновляем таймер
+        lastPlayerExit = exit;
+        breadcrumbTimer = breadcrumbDuration;
+
+        // Говорим всем стражникам на ЭТОМ этаже, которые в погоне, бежать к этой двери
+        GuardAI[] guards = FindObjectsByType<GuardAI>(FindObjectsSortMode.None);
+        foreach (var guard in guards)
+        {
+            // Проверяем, что стражник в погоне и находится примерно на той же высоте (на том же этаже)
+            if (guard.IsChasing && Mathf.Abs(guard.transform.position.y - transform.position.y) < 2f)
+            {
+                guard.SetChaseTargetDoor(transform.position);
+            }
+        }
+
         if (sharedFadeGO == null || sharedFadeImage == null)
         {
-            // Если префаб интерфейса забыли настроить, переносим физически без анимации
             playerObject.transform.position = exit.position;
             return;
         }
 
-        StartCoroutine(TransitionSequence(exit));
+        StartCoroutine(PlayerTransitionSequence(exit));
     }
 
-    private IEnumerator TransitionSequence(Transform exit)
+    // ---------- КОРУТИНА ИГРОКА ----------
+    private IEnumerator PlayerTransitionSequence(Transform exit)
     {
-        isTransitioning = true;
-
-        // Блокируем ввод вора
+        isPlayerTransitioning = true;
         playerController.SetInputEnabled(false);
 
-        // Включаем общий холст и делаем затемнение
         sharedFadeGO.SetActive(true);
         yield return StartCoroutine(FadeValue(0f, 1f, fadeOutDuration));
 
-        // Мгновенный телепорт на целевую точку
-        playerObject.transform.position = exit.position;
+        Rigidbody2D rb = playerObject.GetComponent<Rigidbody2D>();
+        if (rb != null)
+        {
+            rb.linearVelocity = Vector2.zero;
+        }
 
-        // Даем Unity один кадр на обновление физического положения игрока на новом этаже
+        playerObject.transform.position = exit.position;
         yield return new WaitForEndOfFrame();
 
-        // Плавно осветляем экран обратно
         yield return StartCoroutine(FadeValue(1f, 0f, fadeInDuration));
         sharedFadeGO.SetActive(false);
 
-        // Разблокируем ввод игрока
         if (playerController != null)
         {
             playerController.SetInputEnabled(true);
         }
 
-        // Вручную очищаем ссылки, так как игрок физически покинул этот этаж
         playerObject = null;
         playerController = null;
-        isTransitioning = false;
+        isPlayerTransitioning = false;
     }
 
-    // Универсальный метод плавного изменения прозрачности (работает в обе стороны)
+    // ---------- КОРУТИНА СТРАЖНИКА ----------
+    private IEnumerator EnemyTransitionSequence(GameObject enemyGO, GuardAI guard, Transform exit)
+    {
+        
+        // Замораживаем ТОЛЬКО этого конкретного стражника
+        guard.IsTraversing = true;
+        
+        // Ждем, пока он "поднимается/спускается"
+        yield return new WaitForSeconds(enemyTransitionDelay);
+        
+        Rigidbody2D rb = enemyGO.GetComponent<Rigidbody2D>();
+        if (rb != null) rb.linearVelocity = Vector2.zero;
+        
+        // Перемещаем его на тот же выход, куда ушел игрок
+        enemyGO.transform.position = exit.position;
+        
+        yield return new WaitForEndOfFrame();
+        
+        // Размораживаем и говорим снова бежать за игроком
+        guard.ResetChaseTarget();
+        // Размораживаем
+        guard.IsTraversing = false;
+    }
+
     private IEnumerator FadeValue(float startAlpha, float endAlpha, float duration)
     {
         float elapsed = 0f;
