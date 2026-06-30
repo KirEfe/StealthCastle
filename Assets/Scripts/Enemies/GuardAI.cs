@@ -15,6 +15,8 @@ public class GuardAI : MonoBehaviour
 
     [Header("Поиск")]
     [SerializeField] float searchDuration = 5f;
+    [SerializeField] float stuckCheckThreshold = 0.05f; // минимальное перемещение за период
+    [SerializeField] float stuckTimeout = 1.5f; // сколько стоять упёршись прежде чем сдаться
 
     [Header("Зрение")]
     [SerializeField] float visionRange = 5f;
@@ -22,14 +24,21 @@ public class GuardAI : MonoBehaviour
     [SerializeField] SpriteRenderer guardSprite;
     [SerializeField] LayerMask obstacleLayer;
 
+    [Header("Animator")]
+    [SerializeField] Animator animator;
+
     // Флаг перехода между этажами
     public bool IsTraversing { get; set; }
     // Свойство, чтобы другие скрипты знали, что мы в состоянии погони
     public bool IsChasing => currentState == GuardState.Chase;
 
     // Переменные для бега к двери
+    [SerializeField] float doorWaitTimeout = 4f; // таймаут ожидания у двери
     private bool isChasingDoor = false;
     private Vector2 doorTargetPosition;
+    private float doorWaitTimer; // таймер ожидания у двери
+    Vector2 lastPosition;
+    float stuckTimer;
 
     enum GuardState { Patrol, Investigate, Chase, Search }
     GuardState currentState = GuardState.Patrol;
@@ -78,6 +87,7 @@ public class GuardAI : MonoBehaviour
     {
         isChasingDoor = true;
         doorTargetPosition = doorPos;
+        doorWaitTimer = 0f; // сброс таймера при новой цели
     }
 
     public void ResetChaseTarget()
@@ -107,6 +117,7 @@ public class GuardAI : MonoBehaviour
         }
 
         ControlSpriteFlip();
+        UpdateAnimator();
     }
 
     void FixedUpdate()
@@ -127,6 +138,7 @@ public class GuardAI : MonoBehaviour
         if (patrolPoints == null || patrolPoints.Count == 0 || isWaiting) 
         {
             rb.linearVelocity = new Vector2(0, rb.linearVelocity.y);
+            animator.SetFloat("Speed", 0f);
             return;
         }
 
@@ -136,6 +148,7 @@ public class GuardAI : MonoBehaviour
         if (distToTarget < 0.1f && !isWaiting)
         {
             rb.linearVelocity = new Vector2(0, rb.linearVelocity.y);
+            animator.SetFloat("Speed", 0f);
             StartCoroutine(WaitAtPoint());
             return;
         }
@@ -143,6 +156,7 @@ public class GuardAI : MonoBehaviour
         float dirX = Mathf.Sign(target.x - transform.position.x);
         lastMoveDirection = new Vector2(dirX, 0);
         rb.linearVelocity = new Vector2(dirX * walkSpeed, rb.linearVelocity.y);
+        animator.SetFloat("Speed", Mathf.Abs(rb.linearVelocity.x));
     }
 
     IEnumerator WaitAtPoint()
@@ -160,6 +174,7 @@ public class GuardAI : MonoBehaviour
         if (distToTarget < 0.2f)
         {
             rb.linearVelocity = new Vector2(0, rb.linearVelocity.y);
+            animator.SetFloat("Speed", 0f);
             ChangeState(GuardState.Search);
             return;
         }
@@ -167,6 +182,7 @@ public class GuardAI : MonoBehaviour
         float dirX = Mathf.Sign(lastKnownPosition.x - transform.position.x);
         lastMoveDirection = new Vector2(dirX, 0);
         rb.linearVelocity = new Vector2(dirX * walkSpeed, rb.linearVelocity.y);
+        animator.SetFloat("Speed", Mathf.Abs(rb.linearVelocity.x));
     }
 
     void UpdateChase()
@@ -193,17 +209,44 @@ public class GuardAI : MonoBehaviour
 
         float distToTarget = Mathf.Abs(targetPos.x - transform.position.x);
 
+        // Проверка на застревание (упираемся в стену/препятствие)
+        float movedDistance = Vector2.Distance(transform.position, lastPosition);
+        if (movedDistance < stuckCheckThreshold)
+        {
+            stuckTimer += Time.fixedDeltaTime;
+            if (stuckTimer >= stuckTimeout)
+            {
+                LosePlayer();
+                stuckTimer = 0f;
+                return;
+            }
+        }
+        else
+        {
+            stuckTimer = 0f;
+        }
+        lastPosition = transform.position;
+
         // Если добежали до двери, но нас еще не телепортировали — ждем на месте
         if (isChasingDoor && distToTarget < 0.1f)
         {
             rb.linearVelocity = new Vector2(0, rb.linearVelocity.y);
+            animator.SetFloat("Speed", 0f);
+
+            doorWaitTimer += Time.fixedDeltaTime;
+            if (doorWaitTimer >= doorWaitTimeout)
+            {
+                ResetChaseTarget();
+                LosePlayer();
+            }
             return;
         }
 
         float dirX = Mathf.Sign(targetPos.x - transform.position.x);
         lastMoveDirection = new Vector2(dirX, 0);
         rb.linearVelocity = new Vector2(dirX * chaseSpeed, rb.linearVelocity.y);
-        
+        animator.SetFloat("Speed", Mathf.Abs(rb.linearVelocity.x));
+
         lastKnownPosition = targetPos;
     }
 
@@ -303,6 +346,16 @@ public class GuardAI : MonoBehaviour
             guardSprite.flipX = false;
         else if (lastMoveDirection.x < -0.01f)
             guardSprite.flipX = true; 
+    }
+
+    // Обновление параметров Animator
+    void UpdateAnimator()
+    {
+        if (animator == null) return;
+        
+        animator.SetFloat("Speed", Mathf.Abs(rb.linearVelocity.x));
+        animator.SetBool("IsSearching", currentState == GuardState.Search);
+        animator.SetBool("IsChasing", currentState == GuardState.Chase);
     }
 
     void OnDrawGizmosSelected()
