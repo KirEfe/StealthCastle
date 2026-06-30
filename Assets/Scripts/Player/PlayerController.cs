@@ -98,8 +98,8 @@ public class PlayerController : MonoBehaviour, IPlayerLedgeContext
         rb = GetComponent<Rigidbody2D>();
         capsuleCollider = GetComponent<CapsuleCollider2D>();
         disguiseSystem = GetComponent<StealthCastle.Mechanics.DisguiseSystem>();
-        _animator = GetComponent<Animator>();
-        spriteRenderer = GetComponent<SpriteRenderer>();
+        _animator = GetComponentInChildren<Animator>();
+        spriteRenderer = GetComponentInChildren<SpriteRenderer>();
         SyncGroundCheckPosition();
 
         // Инициализация системы залезания
@@ -144,6 +144,9 @@ public class PlayerController : MonoBehaviour, IPlayerLedgeContext
             rb.AddForce(Vector2.up * jumpForce, ForceMode2D.Impulse);
             coyoteTimer = 0;
         }
+
+        if (_animator != null)
+        _animator.SetTrigger("Jump");
     }
 
     public void OnSprint(InputValue value)
@@ -304,6 +307,13 @@ public class PlayerController : MonoBehaviour, IPlayerLedgeContext
                     transform.localScale.y,
                     transform.localScale.z);
             }
+        }
+
+        if (_animator != null)
+        {
+            _animator.SetFloat("Speed", Mathf.Abs(moveInput.x));
+            _animator.SetBool("IsGrounded", isGrounded);
+            _animator.SetFloat("VerticalVelocity", rb.linearVelocity.y);
         }
     }
 
