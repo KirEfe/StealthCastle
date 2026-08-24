@@ -42,6 +42,10 @@ namespace StealthCastle.Mechanics
         DisguisePhase phase = DisguisePhase.Idle;
 
         float phaseTimer;
+
+        // Layer switching for disguise collision
+        private int originalPlayerLayer;
+        private int disguisedPlayerLayer;
         readonly List<DisguisableProp> candidates = new();
         int selectedIndex = -1;
         Sprite activeDisguiseSprite;
@@ -56,6 +60,14 @@ namespace StealthCastle.Mechanics
             disguiseVisual = GetComponent<PlayerDisguiseVisual>();
             playerController = GetComponent<PlayerController>();
             BindInputActions();
+
+            // Кэшируем слои для переключения физики при маскировке
+            originalPlayerLayer = gameObject.layer;
+            disguisedPlayerLayer = LayerMask.NameToLayer("DisguisedPlayer");
+            if (disguisedPlayerLayer == -1)
+            {
+                Debug.LogError("[DisguiseSystem] Layer 'DisguisedPlayer' not found! Create it in Project Settings -> Tags & Layers.");
+            }
         }
 
         void OnEnable()
@@ -247,6 +259,11 @@ namespace StealthCastle.Mechanics
 
             phase = DisguisePhase.Disguised;
             phaseTimer = disguiseDuration;
+
+            // Переключаем физический слой на DisguisedPlayer
+            if (disguisedPlayerLayer != -1)
+                gameObject.layer = disguisedPlayerLayer;
+
             Debug.Log($"[Disguise] Замаскирован под: {selectedProp.DisplayName}. Враги не обнаружат.");
         }
 
@@ -268,6 +285,11 @@ namespace StealthCastle.Mechanics
         public void RemoveDisguise(string reason)
         {
             Debug.Log($"[Disguise] {reason}");
+
+            // Возвращаем исходный физический слой
+            if (originalPlayerLayer != -1)
+                gameObject.layer = originalPlayerLayer;
+
             disguiseVisual.ClearDisguise();
             activeDisguiseSprite = null;
             phase = DisguisePhase.Idle;

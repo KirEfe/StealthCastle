@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: 87f5a3b750c759e49b3f1948440dd543
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 291241
+  packageName: 2D Aimed Follow Camera
+  packageVersion: 1.0.0
+  assetPath: Assets/Juritobi/2DCameraAim/AimCameraComponent.cs
+  uploadId: 683729

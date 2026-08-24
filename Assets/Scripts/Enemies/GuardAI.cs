@@ -20,7 +20,7 @@ public class GuardAI : MonoBehaviour
 
     [Header("Зрение")]
     [SerializeField] float visionRange = 5f;
-    [SerializeField] float proximityRange = 1f;
+    [SerializeField] float proximityRange = 0f; // Обычные стражники не обнаруживают замаскированного игрока в ближнем радиусе
     [SerializeField] SpriteRenderer guardSprite;
     [SerializeField] LayerMask obstacleLayer;
 
