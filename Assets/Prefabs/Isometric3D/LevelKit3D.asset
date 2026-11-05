@@ -1,0 +1,35 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ef0897a4a46d1b545804ad844061a5c4, type: 3}
+  m_Name: LevelKit3D
+  m_EditorClassIdentifier: Assembly-CSharp-Editor::StealthCastle.Isometric3D.EditorTools.LevelKit3D
+  wallMaterial: {fileID: 2100000, guid: 936640f64c0458d4a8d6a1b1df8b922f, type: 2}
+  blockerMaterial: {fileID: 2100000, guid: fea53fc919049aa43b49e815f6f45539, type: 2}
+  floorMaterials:
+  - {fileID: 2100000, guid: 6d7b1f05c1302e24c8907d770123c690, type: 2}
+  - {fileID: 2100000, guid: 309a8c9340773634b9c3fb2c94ae950b, type: 2}
+  - {fileID: 2100000, guid: 78083d6f2f8e0b042a8736b6c68e0d16, type: 2}
+  - {fileID: 2100000, guid: 6eeb7fd93760cc54f84b5e14370de3a6, type: 2}
+  - {fileID: 2100000, guid: 36cbfe146c5842e47a1cd728d7410ce2, type: 2}
+  guardPrefab: {fileID: 7439840036548330234, guid: 8f26e6f97e2a64746ac42296434a1eb1, type: 3}
+  cratePrefab: {fileID: 7316669794248146057, guid: ba253c01a925e724d9ff500d25393e13, type: 3}
+  barrelPrefab: {fileID: 1044465287633444075, guid: 335101657999544438534d1f7e0a6b4b, type: 3}
+  wallPrefab: {fileID: 1675739281933474390, guid: 1cbfcd435bc80c24bae6da8b3ca37619, type: 3}
+  pillarPrefab: {fileID: 7795471184463239686, guid: b475d39080f446948b55518dc4d27965, type: 3}
+  chestPrefab: {fileID: 7367710353730470063, guid: 07a513412ceeecb4c8d8ebceafaf5bd6, type: 3}
+  exitPrefab: {fileID: 1000703331689281634, guid: f5237fc946c5ba14ab6673d6c3171e8a, type: 3}
+  spawnPrefab: {fileID: 2274127078232583903, guid: 4d4d1c33ce9f34340aeba9480bae9a7e, type: 3}
+  sackPrefab: {fileID: 8409657373807425272, guid: 0aaa126eb1c5fa942882e2fdad437bd6, type: 3}
+  kegPrefab: {fileID: 3216280008770062927, guid: c3e16869fe19e9d4ca9bd86f9c39fa4e, type: 3}
+  tablePrefab: {fileID: 3454790874078318581, guid: 9057982209a28ad44a6ad6b972062a60, type: 3}
+  groundLayer: Ground
+  wallLayer: Wall

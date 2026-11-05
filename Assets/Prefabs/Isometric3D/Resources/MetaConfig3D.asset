@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3f0c071ddd51ac84abc8aff06204e114, type: 3}
+  m_Name: MetaConfig3D
+  m_EditorClassIdentifier: Assembly-CSharp::StealthCastle.Isometric3D.Meta.MetaConfig3D
+  artifacts:
+  - {fileID: 11400000, guid: ee05e9d196a08614d96f3df8a9bdb293, type: 2}
+  - {fileID: 11400000, guid: 8fe4128b5c8946d4ea97d07764ccba4b, type: 2}
+  - {fileID: 11400000, guid: 82b3a7be68ba345499d3befcae72adb3, type: 2}
+  - {fileID: 11400000, guid: 5d12290d1c388814a80e94be761b24bd, type: 2}
+  - {fileID: 11400000, guid: ad2b22b8e9dc40e489caf9034097b967, type: 2}
+  - {fileID: 11400000, guid: 3255de656f8ca364aa2dee0b770be005, type: 2}
+  upgrades:
+  - id: breath
+    displayName: Deep Lungs
+    description: +1 s of breath in disguise per level.
+    stat: 0
+    perLevel: 1
+    costs: 1e0000003c00000064000000
+  - id: scan
+    displayName: Keen Eye
+    description: +0.5 m scan radius per level.
+    stat: 1
+    perLevel: 0.5
+    costs: 19000000320000005a000000
+  - id: speed
+    displayName: Light Feet
+    description: +0.4 m/s walking speed per level.
+    stat: 2
+    perLevel: 0.4
+    costs: 2800000050000000
+  - id: pockets
+    displayName: Deep Pockets
+    description: Keep 15% more loot per level when caught.
+    stat: 3
+    perLevel: 0.15
+    costs: 230000004600000078000000
+  chestLootBase: 20
+  chestLootPerLevel: 10
+  levelClearLootBase: 5
+  levelClearLootPerLevel: 5
+  caughtLootKept: 0.25

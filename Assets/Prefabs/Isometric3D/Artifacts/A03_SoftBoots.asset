@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0ad771228e0081448b801b8a792185b0, type: 3}
+  m_Name: A03_SoftBoots
+  m_EditorClassIdentifier: Assembly-CSharp::StealthCastle.Isometric3D.Core.ArtifactData3D
+  displayName: Soft Boots
+  description: Felt soles. Walk faster without making a sound.
+  icon: {fileID: 0}
+  unlockCost: 40
+  affectedTag: 3
+  weightMultiplier: 1
+  disguiseDurationBonus: 0
+  scanRadiusBonus: 0
+  movementSpeedBonus: 1
+  guardVisionBonus: 0
+  rarity: 1
+  spawnChance: 1

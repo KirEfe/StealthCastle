@@ -6,11 +6,20 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
+    path: Assets/Scenes/Isometric3D_Hub.unity
+    guid: 09c0af95c650a00419107f7927108d54
+  - enabled: 1
     path: Assets/Scenes/SampleScene.unity
     guid: 8c9cfa26abfee488c85f1582747f6a02
   - enabled: 1
     path: Assets/Scenes/DisguiseTest.unity
-    guid: 00000000000000000000000000000000
+    guid: 2cc75c28465ff6040adcdc866d36d585
+  - enabled: 1
+    path: Assets/Scenes/Isometric3D_Test.unity
+    guid: a4c5e6f7c99eca14b9e28a4ed8c8893b
+  - enabled: 1
+    path: Assets/Scenes/Isometric3D_Game.unity
+    guid: 590919b11598a8f4c8bab6d71534b820
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 2bcd2660ca9b64942af0de543d8d7100, type: 3}
   m_UseUCBPForAssetBundles: 0

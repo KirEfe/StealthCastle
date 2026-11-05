@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c70b2fdf70db86244b361312edb920bd, type: 3}
+  m_Name: Piece_CorridorL_Data
+  m_EditorClassIdentifier: Assembly-CSharp::StealthCastle.Isometric.World.PieceData
+  prefab: {fileID: 2681631021719447404, guid: 8bc96f15cf3d7b642af9d0cca4050a02, type: 3}
+  sizeInTiles: {x: 4, y: 4}
+  pieceTag: 4
+  weight: 1
+  connections:
+  - localPosition: {x: 0, y: 4}
+    direction: 0
+    openingType: default
+  - localPosition: {x: -4, y: 0}
+    direction: 3
+    openingType: default
+  - localPosition: {x: 0, y: -4}
+    direction: 2
+    openingType: default

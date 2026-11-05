@@ -1,0 +1,32 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b2f0471b0aecd9a418da6ce6742bed49, type: 3}
+  m_Name: P12_Courtyard
+  m_EditorClassIdentifier: Assembly-CSharp::StealthCastle.Isometric3D.World.PieceData3D
+  prefab: {fileID: 3787186808271296531, guid: ed5b7b8350c9de84891cf221e732b815, type: 3}
+  sizeInTiles: {x: 6, y: 6}
+  pieceTag: 3
+  weight: 1
+  connections:
+  - localPosition: {x: 0, y: 6}
+    direction: 0
+    openingType: door
+  - localPosition: {x: 6, y: 0}
+    direction: 1
+    openingType: door
+  - localPosition: {x: 0, y: -6}
+    direction: 2
+    openingType: door
+  - localPosition: {x: -6, y: 0}
+    direction: 3
+    openingType: door
+  floorColor: {r: 0.25, g: 0.25, b: 0.3, a: 1}

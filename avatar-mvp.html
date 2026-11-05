@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>AI Avatar MVP — Web Speech + Three.js</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      --bg: #0f1115; --panel: #161920; --accent: #6c5ce7;
+      --text: #e8e8e8; --muted: #9aa0aa; --border: #2a2f3a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg); color: var(--text);
+      display: grid; grid-template-columns: 1fr 380px; height: 100vh; overflow: hidden;
+    }
+    #stage { position: relative; }
+    #avatar-container { width: 100%; height: 100%; }
+    #subtitle {
+      position: absolute; bottom: 10%; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.7); padding: 10px 18px; border-radius: 999px;
+      font-size: 18px; max-width: 70%; text-align: center;
+      opacity: 0; transition: opacity 0.2s; pointer-events: none;
+    }
+    #subtitle.visible { opacity: 1; }
+    #panel {
+      background: var(--panel); border-left: 1px solid var(--border);
+      display: flex; flex-direction: column; padding: 16px; gap: 12px;
+      overflow: hidden;
+    }
+    #chat-history {
+      flex: 1 1 0; min-height: 0;
+      background: #0f1115; border: 1px solid var(--border); border-radius: 8px;
+      padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;
+    }
+    .chat-msg {
+      padding: 7px 11px; border-radius: 10px; font-size: 13px; line-height: 1.35;
+      max-width: 92%; word-wrap: break-word;
+    }
+    .chat-msg.user { background: #2a2f3a; align-self: flex-end; border-bottom-right-radius: 3px; }
+    .chat-msg.bot  { background: #1e2330; align-self: flex-start;
+                     border-left: 3px solid var(--accent); border-bottom-left-radius: 3px; }
+    .chat-msg .meta { font-size: 10px; color: var(--muted); margin-bottom: 3px; opacity: 0.8; }
+    .chat-msg .say  { display: block; }
+    .chat-msg .cmd  { font-size: 10px; color: #a78bfa; margin-top: 4px; font-family: ui-monospace, monospace; }
+    .chat-input-row { display: flex; gap: 8px; align-items: flex-end; }
+    .chat-input-row textarea { flex: 1; min-height: 44px; resize: none; }
+    .chat-input-row button { height: 44px; padding: 0 14px; white-space: nowrap; }
+    details { background: #0f1115; border: 1px solid var(--border); border-radius: 8px; }
+    details summary { padding: 9px 12px; cursor: pointer; font-size: 13px; color: var(--muted);
+                      user-select: none; list-style: none; }
+    details summary::-webkit-details-marker { display: none; }
+    details summary:hover { color: var(--text); }
+    details[open] summary { border-bottom: 1px solid var(--border); }
+    details > div { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    h2 { margin: 0 0 2px; font-size: 16px; color: var(--accent); }
+    label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+    textarea, select, input {
+      width: 100%; background: #0f1115; border: 1px solid var(--border);
+      color: var(--text); border-radius: 6px; padding: 8px; font-size: 13px;
+      font-family: inherit; resize: vertical;
+    }
+    button {
+      background: var(--accent); color: white; border: none; border-radius: 6px;
+      padding: 9px 12px; font-size: 13px; cursor: pointer; transition: filter 0.15s;
+    }
+    button:hover { filter: brightness(1.12); }
+    button.secondary { background: #2a2f3a; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .row { display: flex; gap: 8px; }
+    .row > * { flex: 1; }
+    .hint { font-size: 11px; color: var(--muted); line-height: 1.35; margin: 0; }
+    .status { font-size: 12px; color: var(--muted); padding-top: 8px; border-top: 1px solid var(--border); }
+    .log { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted);
+           background: #0f1115; border: 1px solid var(--border); border-radius: 6px;
+           padding: 8px; height: 110px; overflow-y: auto; white-space: pre-wrap; }
+    code { color: #a78bfa; }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <div id="avatar-container"></div>
+    <div id="subtitle"></div>
+  </div>
+
+  <aside id="panel">
+    <h2>AI Avatar MVP — чат с qwen3.5</h2>
+    <p class="hint">
+      Пиши боту — он отвечает голосом через аватара, подбирая эмоцию и жест.<br>
+    </p>
+
+    <div class="row" style="gap:6px; margin-bottom:4px;">
+      <div>
+        <label for="provider">Бэкенд</label>
+        <select id="provider">
+          <option value="lmstudio">LM Studio (1234)</option>
+          <option value="ollama">Ollama (11434)</option>
+        </select>
+      </div>
+      <div>
+        <label for="model">Модель</label>
+        <input id="model" type="text" value="qwen3.5:9b" placeholder="qwen3.5:9b" />
+      </div>
+    </div>
+
+    <div id="chat-history" aria-live="polite"></div>
+
+    <div class="chat-input-row">
+      <textarea id="chat-input" placeholder="Напиши что-нибудь… (Enter = отправить, Shift+Enter = новая строка)"></textarea>
+      <button id="chat-send-btn" title="Отправить (Enter)">💬</button>
+      <button id="chat-clear-btn" class="secondary" title="Очистить историю">🗑</button>
+    </div>
+
+    <details id="manual-mode">
+      <summary>⚙️ Ручной режим (структурированная команда)</summary>
+      <div>
+        <p class="hint" style="margin-bottom:6px">
+          Аватар управляется командами вида <code>{ say, emotion, animation }</code> — как описывал Claude.
+        </p>
+        <div>
+          <label for="text">Текст (say)</label>
+          <textarea id="text" placeholder="Привет! Я твой ИИ-агент. Рад тебя видеть!"></textarea>
+        </div>
+        <div class="row">
+          <div>
+            <label for="emotion">Эмоция (emotion)</label>
+            <select id="emotion">
+              <option value="neutral">neutral</option>
+              <option value="happy" selected>happy</option>
+              <option value="sad">sad</option>
+              <option value="angry">angry</option>
+              <option value="surprised">surprised</option>
+            </select>
+          </div>
+          <div>
+            <label for="animation">Жест (animation)</label>
+            <select id="animation">
+              <option value="idle">idle</option>
+              <option value="wave">wave</option>
+              <option value="nod">nod</option>
+              <option value="shrug">shrug</option>
+              <option value="point">point</option>
+              <option value="think">think</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <button id="speak-btn">▶ Отправить команду</button>
+          <button id="stop-btn" class="secondary">⏹ Стоп</button>
+        </div>
+      </div>
+    </details>
+
+    <div>
+      <label for="voice">Голос</label>
+      <select id="voice"></select>
+      <p class="hint">Первый запуск требует жеста (клик) — браузеры блокируют автовоспроизведение.</p>
+    </div>
+
+    <button id="voice-test-btn" class="secondary">🔊 Тест голоса</button>
+
+    <div>
+      <label>Лог:</label>
+      <div class="log" id="log"></div>
+    </div>
+
+    <div class="status" id="status">Статус: инициализация…</div>
+  </aside>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // =============================
+    // 1. СЦЕНА
+    // =============================
+    const container = document.getElementById('avatar-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0f1115);
+    scene.fog = new THREE.Fog(0x0f1115, 6, 14);
+
+    const camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 100);
+    camera.position.set(0, 1.3, 3.4);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 1.2, 0);
+    controls.enableDamping = true;
+    controls.minDistance = 1.8;
+    controls.maxDistance = 6;
+
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x222233, 0.9);
+    scene.add(hemi);
+    const dir = new THREE.DirectionalLight(0xffffff, 1.1);
+    dir.position.set(2, 3, 2.5);
+    dir.castShadow = true;
+    scene.add(dir);
+
+    const floor = new THREE.Mesh(
+      new THREE.CylinderGeometry(2.6, 2.8, 0.06, 48),
+      new THREE.MeshStandardMaterial({ color: 0x1b1f29, roughness: 0.8, metalness: 0.3 })
+    );
+    floor.position.y = 0;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+
+    // =============================
+    // 2. ПРОЦЕДУРНЫЙ АВАТАР (без внешних GLB — MVP)
+    // =============================
+    const avatar = new THREE.Group();
+    scene.add(avatar);
+
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0xffdbac, roughness: 0.5 });
+    const darkMat  = new THREE.MeshStandardMaterial({ color: 0x2a2f3a, roughness: 0.7, metalness: 0.2 });
+    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+    const glowMat  = new THREE.MeshStandardMaterial({ color: 0x6c5ce7, emissive: 0x6c5ce7, emissiveIntensity: 0.9 });
+
+    // Торс
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.75, 16), skinMat);
+    torso.position.y = 1.15;
+    torso.castShadow = true;
+    avatar.add(torso);
+
+    // Голова
+    const headGroup = new THREE.Group();
+    headGroup.position.y = 1.72;
+    avatar.add(headGroup);
+
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.29, 32, 32), skinMat);
+    head.castShadow = true;
+    headGroup.add(head);
+
+    // Глаза
+    const eyeGeo = new THREE.SphereGeometry(0.045, 24, 24);
+    const leftEye = new THREE.Mesh(eyeGeo, whiteMat);
+    leftEye.position.set(-0.095, 0.03, 0.255);
+    leftEye.castShadow = true;
+    headGroup.add(leftEye);
+    const rightEye = new THREE.Mesh(eyeGeo, whiteMat);
+    rightEye.position.set(0.095, 0.03, 0.255);
+    rightEye.castShadow = true;
+    headGroup.add(rightEye);
+
+    const pupilGeo = new THREE.SphereGeometry(0.022, 16, 16);
+    const leftPupil = new THREE.Mesh(pupilGeo, darkMat);
+    leftPupil.position.set(0, 0.005, 0.042);
+    leftEye.add(leftPupil);
+    const rightPupil = new THREE.Mesh(pupilGeo, darkMat);
+    rightPupil.position.set(0, 0.005, 0.042);
+    rightEye.add(rightPupil);
+
+    // Веки (для моргания)
+    const eyelidGeo = new THREE.SphereGeometry(0.05, 24, 24, 0, Math.PI * 2, 0, Math.PI / 2);
+    const eyelidMat = new THREE.MeshStandardMaterial({ color: 0xffdbac, roughness: 0.5 });
+    const leftLid = new THREE.Mesh(eyelidGeo, eyelidMat);
+    leftLid.position.set(-0.095, 0.085, 0.255);
+    leftLid.rotation.x = Math.PI;
+    headGroup.add(leftLid);
+    const rightLid = new THREE.Mesh(eyelidGeo, eyelidMat);
+    rightLid.position.set(0.095, 0.085, 0.255);
+    rightLid.rotation.x = Math.PI;
+    headGroup.add(rightLid);
+
+    // Рот — «blend shape» через scale меша
+    const mouth = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.14, 16), new THREE.MeshStandardMaterial({ color: 0x8a3f3f, roughness: 0.4 }));
+    mouth.rotation.x = Math.PI / 2;
+    mouth.position.set(0, -0.115, 0.265);
+    mouth.castShadow = true;
+    headGroup.add(mouth);
+
+    // Аура-индикатор «внимания»
+    const aura = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.012, 16, 64), glowMat);
+    aura.rotation.x = Math.PI / 2;
+    aura.position.y = 0.02;
+    avatar.add(aura);
+
+    // Руки (плечо → предплечье → кисть) для жестов
+    function makeArm(side) {
+      const group = new THREE.Group();
+      group.position.set(side * 0.36, 1.5, 0);
+      const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.09), skinMat);
+      group.add(shoulder);
+      const upper = new THREE.Group();
+      upper.position.y = -0.1;
+      group.add(upper);
+      const upperMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.34, 16), skinMat);
+      upperMesh.position.y = -0.17;
+      upperMesh.castShadow = true;
+      upper.add(upperMesh);
+      const lower = new THREE.Group();
+      lower.position.y = -0.36;
+      upper.add(lower);
+      const lowerMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.32, 16), skinMat);
+      lowerMesh.position.y = -0.16;
+      lowerMesh.castShadow = true;
+      lower.add(lowerMesh);
+      const hand = new THREE.Mesh(new THREE.SphereGeometry(0.065), skinMat);
+      hand.position.y = -0.34;
+      hand.castShadow = true;
+      lower.add(hand);
+      avatar.add(group);
+      return { group, upper, lower, hand };
+    }
+    const leftArm = makeArm(-1);
+    const rightArm = makeArm(1);
+
+    // =============================
+    // 3. АНИМАЦИОННАЯ СИСТЕМА
+    // =============================
+    const clock = new THREE.Clock();
+    let blinkT = 0;
+    let breathT = 0;
+
+    // Эмоции → blend shapes (мимика)
+    const emotionShapes = {
+      neutral:  { mouthOpen: 0.0, smile: 0.0, brow: 0.0 },
+      happy:    { mouthOpen: 0.15, smile: 0.6, brow: 0.0 },
+      sad:      { mouthOpen: 0.05, smile: -0.5, brow: 0.5 },
+      angry:    { mouthOpen: 0.1, smile: -0.3, brow: 0.8 },
+      surprised:{ mouthOpen: 0.55, smile: 0.0, brow: -0.5 },
+    };
+    let currentEmotion = 'neutral';
+    let targetMouthOpen = 0;
+    let smile = 0, brow = 0;
+
+    // Жесты
+    let activeGesture = null;
+    let gestureStart = 0;
+    let gestureDur = 0;
+
+    const gestures = {
+      idle: 3000,
+      wave: 1400,
+      nod: 1200,
+      shrug: 1500,
+      point: 1300,
+      think: 1800,
+    };
+
+    function playGesture(name) {
+      activeGesture = name;
+      gestureStart = performance.now();
+      gestureDur = gestures[name] || 1000;
+    }
+
+    function lerp(a, b, t) { return a + (b - a) * t; }
+    function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+    function smoothStep(e0, e1, x) {
+      const t = clamp((x - e0) / (e1 - e0), 0, 1);
+      return t * t * (3 - 2 * t);
+    }
+
+    function setEmotion(name) {
+      currentEmotion = name;
+      const s = emotionShapes[name] || emotionShapes.neutral;
+      smile = s.smile; brow = s.brow;
+    }
+
+    function updateAvatar(dt, now) {
+      breathT += dt * 1.4;
+      torso.position.y = 1.15 + Math.sin(breathT) * 0.008;
+      torso.rotation.y = Math.sin(breathT * 0.7) * 0.03;
+
+      // моргание
+      blinkT -= dt;
+      if (blinkT <= 0) {
+        blinkT = 0.12 + Math.random() * 0.08;
+        const close = 0.06;
+        leftLid.position.y = 0.085 - close;
+        rightLid.position.y = 0.085 - close;
+      } else if (blinkT < 0.06) {
+        leftLid.position.y = 0.085;
+        rightLid.position.y = 0.085;
+      }
+
+      // аура пульсирует
+      const pulse = 1 + Math.sin(now * 0.003) * 0.06;
+      aura.scale.set(pulse, pulse, pulse);
+
+      // рот: интерполяция к целевому открытию (липсинк + эмоция)
+      const baseOpen = emotionShapes[currentEmotion].mouthOpen;
+      const open = lerp(mouth.scale.y, Math.max(baseOpen, targetMouthOpen), dt * 10);
+      mouth.scale.set(1, open, 1);
+      // улыбка через изгиб рта (простая эмуляция)
+      mouth.rotation.z = smile * 0.25;
+
+      // брови (эмуляция через наклон глаз)
+      leftEye.rotation.z = -brow * 0.12;
+      rightEye.rotation.z = brow * 0.12;
+
+      // кивок головы при nod
+      if (activeGesture === 'nod') {
+        const p = (now - gestureStart) / gestureDur;
+        headGroup.rotation.x = Math.sin(p * Math.PI * 3) * 0.22 * (1 - p);
+        if (p >= 1) activeGesture = null;
+      } else if (activeGesture === 'wave') {
+        const p = (now - gestureStart) / gestureDur;
+        rightArm.upper.rotation.z = -Math.sin(p * Math.PI * 2) * 1.6 - 0.3;
+        rightArm.upper.rotation.x = 0.4;
+        rightArm.lower.rotation.z = Math.sin(p * Math.PI * 2 + 1) * 0.6;
+        if (p >= 1) { rightArm.upper.rotation.set(0,0,0); rightArm.lower.rotation.set(0,0,0); activeGesture = null; }
+      } else if (activeGesture === 'shrug') {
+        const p = (now - gestureStart) / gestureDur;
+        leftArm.upper.rotation.z = Math.sin(p * Math.PI) * 1.2 + 0.5;
+        rightArm.upper.rotation.z = -Math.sin(p * Math.PI) * 1.2 - 0.5;
+        headGroup.rotation.y = Math.sin(p * Math.PI) * 0.15;
+        if (p >= 1) { leftArm.upper.rotation.set(0,0,0); rightArm.upper.rotation.set(0,0,0); headGroup.rotation.set(0,0,0); activeGesture = null; }
+      } else if (activeGesture === 'point') {
+        const p = (now - gestureStart) / gestureDur;
+        rightArm.upper.rotation.x = -Math.sin(p * Math.PI) * 1.5;
+        rightArm.upper.rotation.z = 0.3;
+        rightArm.lower.rotation.z = Math.sin(p * Math.PI) * 0.9;
+        if (p >= 1) { rightArm.upper.rotation.set(0,0,0); rightArm.lower.rotation.set(0,0,0); activeGesture = null; }
+      } else if (activeGesture === 'think') {
+        const p = (now - gestureStart) / gestureDur;
+        rightArm.upper.rotation.x = 0.6;
+        rightArm.upper.rotation.z = 0.2;
+        rightArm.lower.rotation.z = -0.4 + Math.sin(p * Math.PI * 2) * 0.15;
+        headGroup.rotation.x = 0.2;
+        if (p >= 1) { rightArm.upper.rotation.set(0,0,0); rightArm.lower.rotation.set(0,0,0); headGroup.rotation.set(0,0,0); activeGesture = null; }
+      } else {
+        // idle: руки внизу, голова слегка следит
+        leftArm.upper.rotation.set(0,0,0); leftArm.lower.rotation.set(0,0,0);
+        rightArm.upper.rotation.set(0,0,0); rightArm.lower.rotation.set(0,0,0);
+        headGroup.rotation.x = Math.sin(breathT * 0.5) * 0.04;
+        headGroup.rotation.y = Math.sin(breathT * 0.35) * 0.05;
+      }
+    }
+
+    function render() {
+      requestAnimationFrame(render);
+      const dt = Math.min(clock.getDelta(), 0.1);
+      const now = performance.now();
+      controls.update();
+      updateAvatar(dt, now);
+      renderer.render(scene, camera);
+    }
+    render();
+
+    // =============================
+    // 4. ЛИПСИНК (эвристика по тексту)
+    // =============================
+    // Разбиваем текст на слоги и назначаем каждой длительность — рот открывается на гласных.
+    function syllabify(text) {
+      const tokens = text.toLowerCase().match(/[а-яёa-z0-9]+/gi) || [];
+      const units = [];
+      for (const word of tokens) {
+        const parts = word.split(/([а-яёaeiouy]+)/g).filter(Boolean);
+        for (const p of parts) {
+          if (/[а-яёaeiouy]/.test(p)) {
+            units.push({ type: 'vowel', len: Math.max(120, p.length * 90) });
+          } else {
+            units.push({ type: 'cons', len: Math.max(40, p.length * 40) });
+          }
+        }
+        units.push({ type: 'gap', len: 70 });
+      }
+      return units;
+    }
+
+    // =============================
+    // 5. ГОЛОС (Web Speech API)
+    // =============================
+    const synth = window.speechSynthesis;
+    let voices = [];
+    function loadVoices() {
+      voices = synth.getVoices().filter(v => v.lang.startsWith('ru') || v.lang.startsWith('en'));
+      const sel = document.getElementById('voice');
+      sel.innerHTML = '';
+      voices.forEach((v, i) => {
+        const opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = `${v.name} (${v.lang})`;
+        sel.appendChild(opt);
+      });
+      setStatus(`Голоса: ${voices.length} найдено`);
+    }
+    if (synth.onvoiceschanged !== undefined) {
+      synth.onvoiceschanged = loadVoices;
+    }
+    loadVoices();
+
+    let speaking = false;
+    let mouthInterval = null;
+
+    function speak(text) {
+      if (speaking) stop();
+      const utter = new SpeechSynthesisUtterance(text);
+      const v = voices[document.getElementById('voice').value];
+      log(`speak(): голос=${v ? v.name : 'НЕТ'}, lang=${v ? v.lang : 'ru-RU'}, текст=${text.length}зн`);
+      if (v) { utter.voice = v; }
+      utter.lang = v ? v.lang : 'ru-RU';
+      utter.rate = 1.0;
+      utter.pitch = 1.0;
+
+      utter.onstart = () => {
+        speaking = true;
+        const units = syllabify(text);
+        let ui = 0, t = 0;
+        setStatus('Статус: говорит…');
+        mouthInterval = setInterval(() => {
+          if (ui >= units.length) { clearInterval(mouthInterval); return; }
+          const u = units[ui];
+          t += 30;
+          if (t >= u.len) { t = 0; ui++; }
+          targetMouthOpen = u.type === 'vowel' ? 0.55 + Math.random() * 0.3 : 0.08;
+        }, 30);
+      };
+      utter.onend = utter.onerror = () => {
+        clearInterval(mouthInterval);
+        targetMouthOpen = emotionShapes[currentEmotion].mouthOpen;
+        speaking = false;
+        setStatus('Статус: ожидание');
+      };
+      synth.speak(utter);
+    }
+
+    function stop() {
+      synth.cancel();
+      clearInterval(mouthInterval);
+      targetMouthOpen = emotionShapes[currentEmotion].mouthOpen;
+      speaking = false;
+      setStatus('Статус: остановлено');
+    }
+
+    // =============================
+    // 6. КОМАНДНЫЙ ИНТЕРФЕЙС (то, о чём писал Claude)
+    // =============================
+    const subtitleEl = document.getElementById('subtitle');
+    const logEl = document.getElementById('log');
+    let commandSeq = 0;
+
+    function log(msg) {
+      const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logEl.textContent = line + '\n' + logEl.textContent;
+    }
+
+    function setStatus(t) {
+      document.getElementById('status').textContent = t;
+    }
+
+    function showSubtitle(text, duration) {
+      subtitleEl.textContent = text;
+      subtitleEl.classList.add('visible');
+      clearTimeout(showSubtitle._t);
+      showSubtitle._t = setTimeout(() => subtitleEl.classList.remove('visible'), duration);
+    }
+
+    /**
+     * Публичный API — ровно та схема, которую описывал Claude:
+     *   { say: string, emotion: string, animation: string }
+     */
+    window.agentSpeak = function agentSpeak(cmd) {
+      const id = ++commandSeq;
+      const safe = {
+        say: String(cmd.say ?? ''),
+        emotion: String(cmd.emotion ?? 'neutral'),
+        animation: String(cmd.animation ?? 'idle'),
+      };
+      log(`CMD #${id} ${JSON.stringify(safe)}`);
+
+      setEmotion(safe.emotion);
+      playGesture(safe.animation);
+      showSubtitle(safe.say, Math.max(2000, safe.say.length * 60));
+
+      if (safe.say) {
+        log(`speak() вызван с текстом (${safe.say.length} зн.): "${safe.say.slice(0, 60)}${safe.say.length > 60 ? '…' : ''}"`);
+        speak(safe.say);
+      } else {
+        log('speak() НЕ вызван: пустой say');
+        // без слов — только эмоция/жест
+        setTimeout(() => {
+          targetMouthOpen = emotionShapes[currentEmotion].mouthOpen;
+        }, 1200);
+      }
+      return id;
+    };
+
+    // Обработчики UI
+    document.getElementById('speak-btn').addEventListener('click', () => {
+      const cmd = {
+        say: document.getElementById('text').value,
+        emotion: document.getElementById('emotion').value,
+        animation: document.getElementById('animation').value,
+      };
+      window.agentSpeak(cmd);
+    });
+    document.getElementById('stop-btn').addEventListener('click', stop);
+
+    // 🔊 Кнопка самопроверки голоса
+    document.getElementById('voice-test-btn').addEventListener('click', () => {
+      const voices = synth.getVoices();
+      const selected = voices[document.getElementById('voice').value];
+      const total = voices.length;
+      const ru = voices.filter(v => v.lang.toLowerCase().startsWith('ru')).length;
+      log(`ПРОВЕРКА: найдено голосов=${total}, русских=${ru}`);
+      if (total === 0) {
+        log('⚠ Голоса ещё не загрузились — подождите 1-2 сек и нажмите снова (событие onvoiceschanged)');
+        setStatus('Статус: голоса не найдены');
+        return;
+      }
+      log(`Выбранный голос: ${selected ? selected.name + ' (' + selected.lang + ')' : 'не выбран'}`);
+      log('Запуск тестовой фразы…');
+      window.agentSpeak({
+        say: 'Привет! Меня слышно? Это тест голоса. Раз-два-три.',
+        emotion: 'happy',
+        animation: 'wave'
+      });
+      setStatus('Статус: тест голоса запущен');
+    });
+
+    // =============================
+    // 7. ЧАТ С LLM (Ollama / LM Studio)
+    // =============================
+    const PROVIDERS = {
+      ollama: { url: 'http://localhost:11434/api/generate', type: 'ollama' },
+      lmstudio: { url: 'http://localhost:1234/v1/chat/completions', type: 'lmstudio' }
+    };
+    let providerKey = localStorage.getItem('avatar-provider') || 'lmstudio';
+    let model = localStorage.getItem('avatar-model') || 'qwen3.5:9b';
+
+    const chatHistory = document.getElementById('chat-history');
+    const chatInput = document.getElementById('chat-input');
+    const chatSendBtn = document.getElementById('chat-send-btn');
+    const chatClearBtn = document.getElementById('chat-clear-btn');
+    const providerSelect = document.getElementById('provider');
+    const modelInput = document.getElementById('model');
+    providerSelect.value = providerKey;
+    modelInput.value = model;
+    providerSelect.addEventListener('change', () => { providerKey = providerSelect.value; localStorage.setItem('avatar-provider', providerKey); });
+    modelInput.addEventListener('input', () => { model = modelInput.value; localStorage.setItem('avatar-model', model); });
+
+    const VALID_EMOTIONS = ['neutral','happy','sad','angry','surprised'];
+    const VALID_ANIMATIONS = ['idle','wave','nod','shrug','point','think'];
+
+    function addChatMessage(role, say, cmd) {
+      const div = document.createElement('div');
+      div.className = `chat-msg ${role}`;
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = role === 'user' ? 'Ты' : `Бот (${model})`;
+      const sayEl = document.createElement('span');
+      sayEl.className = 'say';
+      sayEl.textContent = say;
+      div.appendChild(meta);
+      div.appendChild(sayEl);
+      if (cmd) {
+        const cmdEl = document.createElement('div');
+        cmdEl.className = 'cmd';
+        cmdEl.textContent = `→ emotion=${cmd.emotion}, animation=${cmd.animation}`;
+        div.appendChild(cmdEl);
+      }
+      chatHistory.appendChild(div);
+      chatHistory.scrollTop = chatHistory.scrollHeight;
+    }
+
+    function parseBotResponse(text) {
+      // 1) Пробуем найти JSON-блок в ответе
+      const jsonMatch = text.match(/\{[\s\S]*?"say"[\s\S]*?\}/);
+      if (jsonMatch) {
+        try {
+          const obj = JSON.parse(jsonMatch[0]);
+          if (obj.say) {
+            return {
+              say: String(obj.say),
+              emotion: VALID_EMOTIONS.includes(String(obj.emotion)) ? String(obj.emotion) : 'neutral',
+              animation: VALID_ANIMATIONS.includes(String(obj.animation)) ? String(obj.animation) : 'idle'
+            };
+          }
+        } catch (e) {
+          // падает на плохой JSON → fallback ниже
+        }
+      }
+      // 2) Fallback: текст как есть, эмоция/жест из простых эвристик
+      const lower = text.toLowerCase();
+      let emotion = 'neutral';
+      if (/рад|привет|здравств|отлично|прекрасн|здорово|😄|😊|!/.test(lower)) emotion = 'happy';
+      else if (/жаль|к сожалению|груст|плох|устал|😢|😞/.test(lower)) emotion = 'sad';
+      else if (/злю|бесит|ужас|кошмар|😠|😡/.test(lower)) emotion = 'angry';
+      else if (/удив|вау|ого|неожидан|😮|😯/.test(lower)) emotion = 'surprised';
+
+      let animation = 'idle';
+      if (/\?/.test(lower) || /дума|не понят|не знаю|хм/.test(lower)) animation = 'think';
+      else if (/привет|здравств|рад видеть/.test(lower)) animation = 'wave';
+      else if (/пока|увидим|до встреч/.test(lower)) animation = 'wave';
+
+      return { say: text.trim(), emotion, animation };
+    }
+
+    async function askBot(userText) {
+      // Для reasoning-моделей (DeepSeek R1) просим не тратить токены на размышления
+      const noReasoning = 'Отвечай сразу, без внутренних размышлений и объяснений.';
+      const systemPrompt =
+        'Ты дружелюбный ИИ-агент с голосом и аватаром. ' +
+        'Отвечай КРАТКО (1-3 предложения), по-русски, в разговорном стиле. ' +
+        noReasoning + ' ' +
+        'В конце ответа верни СТРОГО JSON-объект в таком формате: ' +
+        '{"say": "твой ответ вслух", "emotion": "happy|sad|angry|surprised|neutral", "animation": "wave|nod|shrug|point|think|idle"}. ' +
+        'JSON должен быть последними символами ответа.';
+
+      const p = PROVIDERS[providerKey];
+      const isOllama = p.type === 'ollama';
+
+      const body = isOllama
+        ? {
+            model: model,
+            prompt: `${systemPrompt}\\n\\nПользователь: ${userText}\\nАссистент:`,
+            stream: false,
+            format: 'json',
+            options: { temperature: 0.7, num_predict: 400 }
+          }
+        : {
+            model: model,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userText }
+            ],
+            stream: false,
+            temperature: 0.7,
+            max_tokens: 400
+          };
+
+      setStatus(`Статус: ${model} думает…${isOllama ? ' (первый запуск — до 60 сек)' : ''}`);
+      chatSendBtn.disabled = true;
+      log(`Запрос к ${providerKey} (${model}): prompt_len=${JSON.stringify(body).length}`);
+
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 мин
+        const res = await fetch(p.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        log(`RESPONSE full: ${JSON.stringify(data).slice(0, 600)}`);
+        const msg = data.choices?.[0]?.message || {};
+        // Обычные модели отдают ответ в content, reasoning-модели (DeepSeek R1) —
+        // в reasoning_content. Если content содержит JSON-команду — берём content.
+        const hasJson = (t) => t && t.includes('"say"');
+        const raw = isOllama
+          ? (data.response || '')
+          : (hasJson(msg.content) ? msg.content : (msg.reasoning_content || msg.content || ''));
+        log(`raw source: ${msg.content ? 'content' : 'reasoning_content'}, extracted (${raw.length} chars): ${raw.slice(0, 120)}${raw.length > 120 ? '…' : ''}`);
+
+        let parsed;
+        try {
+          parsed = parseBotResponse(raw);
+          log(`parsed: say=${parsed.say.length}зн, emotion=${parsed.emotion}, animation=${parsed.animation}`);
+        } catch (parseErr) {
+          log(`ОШИБКА parseBotResponse: ${parseErr.message}`);
+          parsed = { say: 'Ошибка разбора ответа модели.', emotion: 'neutral', animation: 'idle' };
+        }
+
+        try {
+          addChatMessage('bot', parsed.say, parsed);
+        } catch (uiErr) {
+          log(`ОШИБКА addChatMessage: ${uiErr.message}`);
+          console.error(uiErr);
+        }
+        log(`${providerKey} raw: ${raw.slice(0, 160)}${raw.length > 160 ? '…' : ''}`);
+        window.agentSpeak(parsed);
+        setStatus('Статус: ожидание');
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          const fallback = `${model} не ответила за 3 минуты. Модель долго загружается — попробуй ещё раз, второй запрос будет быстрее.`;
+          addChatMessage('bot', fallback, null);
+          log(`ОШИБКА ${providerKey}: таймаут (AbortError)`);
+          setStatus('Статус: таймаут LLM');
+        } else {
+          const fallback = `Не удалось связаться с ${providerKey}: ${err.message}. Проверь, запущен ли сервер.`;
+          addChatMessage('bot', fallback, null);
+          log(`ОШИБКА ${providerKey}: ${err.message}`);
+          setStatus(`Статус: ошибка ${providerKey}`);
+        }
+      } finally {
+        chatSendBtn.disabled = false;
+        chatInput.focus();
+      }
+    }
+
+    function sendChat() {
+      const text = chatInput.value.trim();
+      if (!text) return;
+      addChatMessage('user', text, null);
+      chatInput.value = '';
+      askBot(text);
+    }
+
+    chatSendBtn.addEventListener('click', sendChat);
+    chatClearBtn.addEventListener('click', () => {
+      chatHistory.innerHTML = '';
+      log('История чата очищена');
+    });
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendChat();
+      }
+    });
+
+    // Приветственная команда для демонстрации
+    setTimeout(() => {
+      log('Готов. Пример: agentSpeak({say:"Привет!",emotion:"happy",animation:"wave"})');
+      setStatus('Статус: ожидание');
+    }, 800);
+  </script>
+</body>
+</html>
